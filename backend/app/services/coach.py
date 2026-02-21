@@ -98,7 +98,7 @@ def _generate_fallback(analysis: dict) -> dict:
             f"your average win (${abs(avg_loss):.2f} vs ${avg_win:.2f}). This asymmetry is the "
             f"hallmark of loss aversion — the reluctance to realize losses."
         )
-    else:
+    elif worst_name == "Revenge Trading":
         agg = worst_details.get("post_loss_aggression_index", 1)
         feedback_parts.append(
             f"Your post-loss aggression index is {agg:.2f} — meaning you increase position sizes "
@@ -262,7 +262,7 @@ async def _call_gemini(user_prompt: str) -> dict:
     client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.0-flash-exp",
         contents=f"{SYSTEM_PROMPT}\n\n{user_prompt}",
         config={
             "response_mime_type": "application/json",

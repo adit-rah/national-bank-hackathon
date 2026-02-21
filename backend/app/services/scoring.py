@@ -37,8 +37,14 @@ def run_full_analysis(df: pd.DataFrame) -> dict:
     rt_score, rt_details = detect_revenge_trading(df)
     an_score, an_details = detect_anchoring(df)
 
-    # 4. Archetype classification
-    archetype_label, archetype_details = classify_archetype(df)
+    # 4. Archetype classification (with bias scores)
+    archetype_label, archetype_details = classify_archetype(
+        df,
+        overtrading_score=ot_score,
+        loss_aversion_score=la_score,
+        revenge_trading_score=rt_score,
+        anchoring_score=an_score,
+    )
 
     # 5. Visualisation data
     equity_curve = build_equity_curve(df)
