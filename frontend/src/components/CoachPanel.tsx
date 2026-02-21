@@ -34,7 +34,6 @@ export default function CoachPanel({ sessionId }: Props) {
             className="bg-white/[0.02] border border-white/[0.05] text-[#8a90a0] rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:border-blue-500/30 transition-colors appearance-none cursor-pointer"
           >
             <option value="">Default Provider</option>
-            <option value="groq">Groq (Llama 3.3)</option>
             <option value="openai">OpenAI (GPT-4o)</option>
             <option value="anthropic">Anthropic (Claude)</option>
             <option value="gemini">Google Gemini</option>
@@ -66,15 +65,7 @@ export default function CoachPanel({ sessionId }: Props) {
             }`}>
               {result.provider === 'fallback'
                 ? 'Template-based (no API key)'
-                : (() => {
-                    const labels: Record<string, string> = {
-                      groq: 'Groq (Llama 3.3)',
-                      openai: 'GPT-4o',
-                      anthropic: 'Claude',
-                      gemini: 'Gemini 2.0',
-                    };
-                    return labels[result.provider] || result.provider;
-                  })()}
+                : `${{ openai: 'GPT-4o', anthropic: 'Claude', gemini: 'Gemini 2.0' }[result.provider] || result.provider}`}
             </span>
           </div>
 
