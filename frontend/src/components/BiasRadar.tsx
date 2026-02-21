@@ -57,9 +57,9 @@ export default function BiasRadar({ overtrading, lossAversion, revengeTrading, a
             ]}
             layout={{
               autosize: false,
-              height: 280,
-              width: 340,
-              margin: { l: 55, r: 55, t: 25, b: 25 },
+              height: 320,
+              width: 420,
+              margin: { l: 100, r: 100, t: 50, b: 50 },
               paper_bgcolor: 'transparent',
               plot_bgcolor: 'transparent',
               font: { color: '#6b7280', size: 11, family: 'Inter' },
