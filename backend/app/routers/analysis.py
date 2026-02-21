@@ -67,6 +67,8 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
         bias_result.loss_aversion_details = results["loss_aversion"]["details"]
         bias_result.revenge_trading_score = results["revenge_trading"]["score"]
         bias_result.revenge_trading_details = results["revenge_trading"]["details"]
+        bias_result.anchoring_score = results["anchoring"]["score"]
+        bias_result.anchoring_details = results["anchoring"]["details"]
         bias_result.archetype = results["archetype"]["label"]
         bias_result.archetype_details = results["archetype"]["details"]
         bias_result.feature_summary = results["feature_summary"]
@@ -79,6 +81,8 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
             loss_aversion_details=results["loss_aversion"]["details"],
             revenge_trading_score=results["revenge_trading"]["score"],
             revenge_trading_details=results["revenge_trading"]["details"],
+            anchoring_score=results["anchoring"]["score"],
+            anchoring_details=results["anchoring"]["details"],
             archetype=results["archetype"]["label"],
             archetype_details=results["archetype"]["details"],
             feature_summary=results["feature_summary"],
@@ -93,6 +97,7 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
         "overtrading": results["overtrading"],
         "loss_aversion": results["loss_aversion"],
         "revenge_trading": results["revenge_trading"],
+        "anchoring": results["anchoring"],
         "archetype": results["archetype"],
         "feature_summary": results["feature_summary"],
         "equity_curve": results["equity_curve"],
@@ -128,6 +133,11 @@ async def get_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
             "score": bias.revenge_trading_score,
             "band": _band(bias.revenge_trading_score),
             "details": bias.revenge_trading_details,
+        },
+        "anchoring": {
+            "score": bias.anchoring_score,
+            "band": _band(bias.anchoring_score),
+            "details": bias.anchoring_details,
         },
         "archetype": {
             "label": bias.archetype,

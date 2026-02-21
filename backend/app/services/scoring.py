@@ -6,6 +6,7 @@ from app.services.bias_detector import (
     detect_loss_aversion,
     detect_overtrading,
     detect_revenge_trading,
+    detect_anchoring,
 )
 from app.services.features import (
     build_equity_curve,
@@ -34,6 +35,7 @@ def run_full_analysis(df: pd.DataFrame) -> dict:
     ot_score, ot_details = detect_overtrading(df)
     la_score, la_details = detect_loss_aversion(df)
     rt_score, rt_details = detect_revenge_trading(df)
+    an_score, an_details = detect_anchoring(df)
 
     # 4. Archetype classification
     archetype_label, archetype_details = classify_archetype(df)
@@ -60,6 +62,11 @@ def run_full_analysis(df: pd.DataFrame) -> dict:
             "score": rt_score,
             "band": score_to_band(rt_score),
             "details": rt_details,
+        },
+        "anchoring": {
+            "score": an_score,
+            "band": score_to_band(an_score),
+            "details": an_details,
         },
         "archetype": {
             "label": archetype_label,
