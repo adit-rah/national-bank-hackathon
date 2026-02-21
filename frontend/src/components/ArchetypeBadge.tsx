@@ -4,46 +4,51 @@ interface Props {
   archetype: Archetype;
 }
 
-const ARCHETYPE_CONFIG: Record<string, { icon: string; gradient: string; accent: string }> = {
-  'Systematic Disciplined': { icon: '🎯', gradient: 'from-accent-green/[0.08] to-transparent', accent: '#34d399' },
-  'Aggressive Opportunistic': { icon: '⚡', gradient: 'from-accent-yellow/[0.08] to-transparent', accent: '#fbbf24' },
-  'Emotionally Reactive': { icon: '🌊', gradient: 'from-accent-red/[0.08] to-transparent', accent: '#f87171' },
-  'Conservative Defensive': { icon: '🛡️', gradient: 'from-accent-blue/[0.08] to-transparent', accent: '#60a5fa' },
+const CONFIG: Record<string, { icon: string; accent: string; bg: string }> = {
+  'Systematic Disciplined': { icon: '◎', accent: '#34d399', bg: 'rgba(52,211,153,0.04)' },
+  'Aggressive Opportunistic': { icon: '⚡', accent: '#fbbf24', bg: 'rgba(251,191,36,0.04)' },
+  'Emotionally Reactive': { icon: '◉', accent: '#f87171', bg: 'rgba(248,113,113,0.04)' },
+  'Conservative Defensive': { icon: '◈', accent: '#60a5fa', bg: 'rgba(96,165,250,0.04)' },
 };
 
 export default function ArchetypeBadge({ archetype }: Props) {
-  const config = ARCHETYPE_CONFIG[archetype.label] || { icon: '📊', gradient: 'from-white/[0.04] to-transparent', accent: '#6b7280' };
-  const details = archetype.details || {};
+  const c = CONFIG[archetype.label] || { icon: '◇', accent: '#6b7280', bg: 'rgba(255,255,255,0.02)' };
+  const d = archetype.details || {};
 
-  const metrics = [
-    { label: 'Trade Frequency', value: details.trade_frequency, unit: '/hr' },
-    { label: 'Position Variability', value: details.position_size_variability, unit: '%' },
-    { label: 'DD Tolerance', value: details.drawdown_tolerance, unit: '%' },
-  ].filter(m => m.value != null);
+  const stats = [
+    { k: 'Frequency', v: d.trade_frequency, u: '/hr' },
+    { k: 'Position Var.', v: d.position_size_variability, u: '%' },
+    { k: 'DD Tolerance', v: d.drawdown_tolerance, u: '%' },
+  ].filter(s => s.v != null);
 
   return (
-    <div className={`card bg-gradient-to-br ${config.gradient} p-6 flex flex-col h-full`}>
-      <p className="section-title mb-4">Trader Archetype</p>
+    <div className="card h-full flex flex-col" style={{ background: `linear-gradient(135deg, ${c.bg} 0%, transparent 70%)` }}>
+      <div className="p-5 flex-1">
+        <p className="data-label mb-4">Trader Archetype</p>
 
-      <div className="flex-1">
-        <div className="text-3xl mb-3">{config.icon}</div>
-        <h3 className="text-white font-semibold text-lg tracking-tight mb-2">{archetype.label}</h3>
-        <p className="text-gray-500 text-[13px] leading-relaxed">
-          {details.description || 'Classification based on trading patterns.'}
+        <div className="flex items-center gap-2.5 mb-3">
+          <span className="text-xl" style={{ color: c.accent }}>{c.icon}</span>
+          <h3 className="text-[16px] font-semibold text-white tracking-[-0.02em]">{archetype.label}</h3>
+        </div>
+
+        <p className="text-[12px] text-[#5a6174] leading-[1.6]">
+          {d.description || 'Classification based on trading patterns.'}
         </p>
       </div>
 
-      {/* Metrics */}
-      {metrics.length > 0 && (
-        <div className="mt-6 pt-4 border-t border-white/[0.06] space-y-2.5">
-          {metrics.map((m) => (
-            <div key={m.label} className="flex justify-between items-center">
-              <span className="text-[12px] text-gray-600">{m.label}</span>
-              <span className="text-[12px] text-gray-300 font-mono">
-                {typeof m.value === 'number' ? m.value.toFixed(1) : m.value}{m.unit}
-              </span>
-            </div>
-          ))}
+      {stats.length > 0 && (
+        <div className="px-5 pb-5 pt-0">
+          <div className="divider mb-3" />
+          <div className="space-y-2">
+            {stats.map(s => (
+              <div key={s.k} className="flex justify-between items-center">
+                <span className="text-[11px] text-[#3a4258]">{s.k}</span>
+                <span className="mono text-[11px] text-[#8a90a0]">
+                  {typeof s.v === 'number' ? s.v.toFixed(1) : s.v}{s.u}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -8,23 +8,17 @@ interface Props {
   anchoring: BiasScore;
 }
 
-function bandColor(band: string): string {
-  switch (band) {
-    case 'disciplined': return '#34d399';
-    case 'elevated': return '#fbbf24';
-    case 'high_risk': return '#f87171';
-    default: return '#6b7280';
-  }
-}
+const BAND_COLORS: Record<string, string> = {
+  disciplined: '#34d399',
+  elevated: '#fbbf24',
+  high_risk: '#f87171',
+};
 
-function bandLabel(band: string): string {
-  switch (band) {
-    case 'disciplined': return 'Disciplined';
-    case 'elevated': return 'Elevated';
-    case 'high_risk': return 'High Risk';
-    default: return band;
-  }
-}
+const BAND_LABELS: Record<string, string> = {
+  disciplined: 'Low',
+  elevated: 'Elevated',
+  high_risk: 'High',
+};
 
 export default function BiasRadar({ overtrading, lossAversion, revengeTrading, anchoring }: Props) {
   const biases = [
@@ -34,27 +28,27 @@ export default function BiasRadar({ overtrading, lossAversion, revengeTrading, a
     { name: 'Anchoring', ...anchoring },
   ];
 
-  const categories = biases.map((b) => b.name);
-  const values = biases.map((b) => b.score);
+  const categories = biases.map(b => b.name);
+  const values = biases.map(b => b.score);
 
   return (
-    <div className="card p-6 h-full">
-      <p className="section-title mb-6">Bias Severity</p>
+    <div className="card p-5 h-full">
+      <p className="data-label mb-5">Bias Severity Scores</p>
 
-      <div className="flex flex-col lg:flex-row items-center gap-8">
+      <div className="flex flex-col lg:flex-row items-start gap-6">
+        {/* Radar chart */}
         <div className="flex-shrink-0">
           <Plot
-            data={[
-              {
-                type: 'scatterpolar',
-                r: [...values, values[0]],
-                theta: [...categories, categories[0]],
-                fill: 'toself',
-                fillcolor: 'rgba(96, 165, 250, 0.08)',
-                line: { color: 'rgba(96, 165, 250, 0.6)', width: 2 },
-                marker: { size: 6, color: '#60a5fa' },
-              },
-            ]}
+            data={[{
+              type: 'scatterpolar',
+              r: [...values, values[0]],
+              theta: [...categories, categories[0]],
+              fill: 'toself',
+              fillcolor: 'rgba(59, 130, 246, 0.06)',
+              line: { color: 'rgba(59, 130, 246, 0.5)', width: 1.5 },
+              marker: { size: 5, color: '#3b82f6' },
+              hovertemplate: '%{theta}: %{r:.0f}/100<extra></extra>',
+            }]}
             layout={{
               autosize: false,
               height: 320,
@@ -62,19 +56,21 @@ export default function BiasRadar({ overtrading, lossAversion, revengeTrading, a
               margin: { l: 100, r: 100, t: 50, b: 50 },
               paper_bgcolor: 'transparent',
               plot_bgcolor: 'transparent',
-              font: { color: '#6b7280', size: 11, family: 'Inter' },
+              font: { color: '#5a6174', size: 10, family: 'Inter' },
               polar: {
                 bgcolor: 'transparent',
                 radialaxis: {
                   visible: true,
                   range: [0, 100],
-                  gridcolor: 'rgba(255,255,255,0.04)',
-                  linecolor: 'rgba(255,255,255,0.04)',
-                  tickfont: { color: '#4b5563', size: 9 },
+                  gridcolor: 'rgba(255,255,255,0.03)',
+                  linecolor: 'rgba(255,255,255,0.03)',
+                  tickfont: { color: '#2a3040', size: 8 },
+                  dtick: 25,
                 },
                 angularaxis: {
-                  gridcolor: 'rgba(255,255,255,0.04)',
-                  linecolor: 'rgba(255,255,255,0.06)',
+                  gridcolor: 'rgba(255,255,255,0.03)',
+                  linecolor: 'rgba(255,255,255,0.04)',
+                  tickfont: { size: 10 },
                 },
               },
               showlegend: false,
@@ -83,35 +79,28 @@ export default function BiasRadar({ overtrading, lossAversion, revengeTrading, a
           />
         </div>
 
-        <div className="flex-1 w-full space-y-5">
-          {biases.map((b) => (
-            <div key={b.name}>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[13px] text-gray-300 font-medium">{b.name}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono text-gray-500">{b.score}</span>
-                  <span
-                    className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md"
-                    style={{
-                      backgroundColor: `${bandColor(b.band)}12`,
-                      color: bandColor(b.band),
-                    }}
-                  >
-                    {bandLabel(b.band)}
-                  </span>
+        {/* Score bars */}
+        <div className="flex-1 w-full space-y-4 pt-1">
+          {biases.map(b => {
+            const color = BAND_COLORS[b.band] || '#6b7280';
+            return (
+              <div key={b.name}>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[12px] text-[#8a90a0] font-medium">{b.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="mono text-[11px] text-[#5a6174]">{b.score}</span>
+                    <span className="badge" style={{ backgroundColor: `${color}10`, color }}>{BAND_LABELS[b.band] || b.band}</span>
+                  </div>
+                </div>
+                <div className="h-1 bg-white/[0.03] rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700 ease-out"
+                    style={{ width: `${Math.max(b.score, 1)}%`, backgroundColor: color }}
+                  />
                 </div>
               </div>
-              <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700 ease-out"
-                  style={{
-                    width: `${b.score}%`,
-                    background: `linear-gradient(90deg, ${bandColor(b.band)}80, ${bandColor(b.band)})`,
-                  }}
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

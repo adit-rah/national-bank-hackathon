@@ -7,49 +7,63 @@ function App() {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
   return (
-    <div className="min-h-screen bg-dark-950 relative">
-      {/* Subtle gradient background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-accent-blue/[0.03] rounded-full blur-[128px]" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-accent-purple/[0.03] rounded-full blur-[128px]" />
-      </div>
-
-      {/* Header */}
-      <header className="relative z-50 border-b border-white/[0.06] bg-dark-950/80 backdrop-blur-xl sticky top-0">
-        <div className="max-w-[1400px] mx-auto px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-blue to-accent-purple/80 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-              </svg>
+    <div className="min-h-screen bg-[#07090f]">
+      {/* ─── Top bar ──────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 bg-[#0c0f18]/90 backdrop-blur-xl border-b border-white/[0.04]">
+        <div className="max-w-[1360px] mx-auto px-6 flex items-center justify-between h-[52px]">
+          {/* Logo */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/10">
+                <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                </svg>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[14px] font-semibold text-white tracking-[-0.02em]">Bias Detector</span>
+                <span className="text-[10px] text-[#3a4258] font-medium">v1.0</span>
+              </div>
             </div>
-            <span className="text-[15px] font-semibold text-white tracking-tight">Bias Detector</span>
-            <span className="hidden sm:inline text-xs text-gray-600 ml-1">/ Trading Psychology</span>
+
+            {/* Nav divider */}
+            {analysisResult && (
+              <>
+                <div className="h-4 w-px bg-white/[0.06]" />
+                <span className="text-[11px] text-[#5a6174] font-medium uppercase tracking-wider">
+                  Analysis — {analysisResult.trade_count.toLocaleString()} trades
+                </span>
+              </>
+            )}
           </div>
 
-          {analysisResult && (
-            <button
-              onClick={() => setAnalysisResult(null)}
-              className="group flex items-center gap-2 text-[13px] text-gray-500 hover:text-white transition-all duration-200 px-3 py-1.5 rounded-lg hover:bg-white/[0.04]"
-            >
-              <svg className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              New Analysis
-            </button>
-          )}
+          {/* Actions */}
+          <div className="flex items-center gap-3">
+            {analysisResult && (
+              <button
+                onClick={() => setAnalysisResult(null)}
+                className="btn-secondary flex items-center gap-1.5 text-[12px] py-1.5 px-3"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                New Analysis
+              </button>
+            )}
+            <div className="flex items-center gap-1.5 text-[10px] text-[#2a3040] font-medium">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse" />
+              <span className="text-[#3a4258]">System Online</span>
+            </div>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="relative z-10 max-w-[1400px] mx-auto px-8 py-8">
-        <div className="animate-fade-in">
-          {analysisResult ? (
-            <Dashboard result={analysisResult} />
-          ) : (
-            <Upload onAnalysisComplete={setAnalysisResult} />
-          )}
-        </div>
+      {/* ─── Content ──────────────────────────────────────── */}
+      <main className="max-w-[1360px] mx-auto px-6 py-6">
+        {analysisResult ? (
+          <Dashboard result={analysisResult} />
+        ) : (
+          <Upload onAnalysisComplete={setAnalysisResult} />
+        )}
       </main>
     </div>
   );

@@ -1,81 +1,62 @@
 import Plot from 'react-plotly.js';
 import type { EquityCurvePoint } from '../types';
 
-interface Props {
-  data: EquityCurvePoint[];
-}
+interface Props { data: EquityCurvePoint[]; }
+
+const CHART_FONT = { color: '#4a5068', size: 10, family: 'Inter, system-ui, sans-serif' };
+const GRID = 'rgba(255,255,255,0.025)';
+const HOVER = { bgcolor: '#141c30', bordercolor: 'rgba(255,255,255,0.08)', font: { color: '#c9cdd5', size: 11, family: 'Inter' } };
 
 export default function EquityCurve({ data }: Props) {
-  const timestamps = data.map((d) => d.timestamp);
-  const balances = data.map((d) => d.balance);
-  const drawdowns = data.map((d) => d.drawdown);
-
   return (
-    <div className="card p-6">
-      <p className="section-title mb-1">Equity Curve & Drawdown</p>
-      <p className="text-[12px] text-gray-600 mb-4">Balance over time with drawdown overlay</p>
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="data-label">Equity Curve</p>
+          <p className="text-[11px] text-[#2a3040] mt-0.5">Balance trajectory with drawdown overlay</p>
+        </div>
+        <div className="flex items-center gap-4 text-[10px]">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-blue-400 rounded-full inline-block" /> Balance</span>
+          <span className="flex items-center gap-1.5 text-[#5a6174]"><span className="w-3 h-0.5 bg-red-400/50 rounded-full inline-block" /> Drawdown</span>
+        </div>
+      </div>
       <Plot
         data={[
           {
-            x: timestamps,
-            y: balances,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Balance',
-            line: { color: '#60a5fa', width: 1.5, shape: 'spline' },
+            x: data.map(d => d.timestamp),
+            y: data.map(d => d.balance),
+            type: 'scatter', mode: 'lines', name: 'Balance',
+            line: { color: '#3b82f6', width: 1.5 },
             yaxis: 'y1',
+            hovertemplate: '$%{y:,.0f}<extra>Balance</extra>',
           },
           {
-            x: timestamps,
-            y: drawdowns,
-            type: 'scatter',
-            mode: 'lines',
-            fill: 'tozeroy',
-            name: 'Drawdown %',
-            line: { color: '#f87171', width: 1 },
-            fillcolor: 'rgba(248,113,113,0.06)',
+            x: data.map(d => d.timestamp),
+            y: data.map(d => d.drawdown),
+            type: 'scatter', mode: 'lines', fill: 'tozeroy', name: 'Drawdown',
+            line: { color: 'rgba(248,113,113,0.4)', width: 1 },
+            fillcolor: 'rgba(248,113,113,0.04)',
             yaxis: 'y2',
+            hovertemplate: '%{y:.1f}%<extra>Drawdown</extra>',
           },
         ]}
         layout={{
-          autosize: true,
-          height: 360,
-          margin: { l: 55, r: 55, t: 8, b: 36 },
-          paper_bgcolor: 'transparent',
-          plot_bgcolor: 'transparent',
-          font: { color: '#6b7280', size: 10, family: 'Inter' },
-          xaxis: {
-            gridcolor: 'rgba(255,255,255,0.03)',
-            linecolor: 'rgba(255,255,255,0.06)',
-            tickfont: { size: 9 },
-          },
+          autosize: true, height: 340,
+          margin: { l: 52, r: 48, t: 4, b: 32 },
+          paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+          font: CHART_FONT,
+          xaxis: { gridcolor: GRID, linecolor: 'transparent', tickfont: { size: 9 }, showgrid: false },
           yaxis: {
-            title: { text: 'Balance', font: { size: 10, color: '#4b5563' } },
-            gridcolor: 'rgba(255,255,255,0.03)',
-            linecolor: 'rgba(255,255,255,0.06)',
-            side: 'left',
-            tickfont: { size: 9 },
-            tickprefix: '$',
+            gridcolor: GRID, linecolor: 'transparent', tickfont: { size: 9 },
+            tickprefix: '$', side: 'left',
           },
           yaxis2: {
-            title: { text: 'Drawdown', font: { size: 10, color: '#4b5563' } },
-            overlaying: 'y',
-            side: 'right',
-            gridcolor: 'transparent',
-            linecolor: 'rgba(255,255,255,0.06)',
-            tickfont: { size: 9 },
-            ticksuffix: '%',
-          },
-          legend: {
-            x: 0, y: 1.1, orientation: 'h',
-            font: { color: '#9ca3af', size: 10 },
+            overlaying: 'y', side: 'right', gridcolor: 'transparent',
+            linecolor: 'transparent', tickfont: { size: 9 }, ticksuffix: '%',
           },
           hovermode: 'x unified',
-          hoverlabel: {
-            bgcolor: '#1a2540',
-            bordercolor: 'rgba(255,255,255,0.1)',
-            font: { color: '#e5e7eb', size: 11, family: 'Inter' },
-          },
+          hoverlabel: HOVER,
+          showlegend: false,
         }}
         config={{ responsive: true, displayModeBar: false }}
         className="w-full"
