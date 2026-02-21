@@ -1,22 +1,11 @@
-from contextlib import asynccontextmanager
+"""FastAPI application – stateless trade bias analyser."""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import init_db
-from app.routers import upload, analysis, counterfactual, coach
 
+from app.routers import analysis, counterfactual
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await init_db()
-    yield
-
-
-app = FastAPI(
-    title="National Bank Bias Detector",
-    description="AI-powered trading bias detection and coaching platform",
-    version="1.0.0",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Trade Bias Analyser", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,12 +15,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(upload.router, prefix="/api", tags=["Upload"])
-app.include_router(analysis.router, prefix="/api", tags=["Analysis"])
-app.include_router(counterfactual.router, prefix="/api", tags=["Counterfactual"])
-app.include_router(coach.router, prefix="/api", tags=["Coach"])
+app.include_router(analysis.router, prefix="/api")
+app.include_router(counterfactual.router, prefix="/api")
 
 
-@app.get("/api/health")
+@app.get("/health")
 async def health():
     return {"status": "ok"}

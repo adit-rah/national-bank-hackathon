@@ -1,95 +1,68 @@
-"""Analysis router – trigger full bias analysis and retrieve results."""
+"""Analysis router – stateless: upload file, run analysis, return results.
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-import pandas as pd
-import json
+Results are cached in-memory briefly so the frontend's two-step flow
+(upload → fetch by session_id) keeps working without a database.
+"""
 
-from app.database import get_db
-from app.models import AnalysisSession, BiasResult, Trade
-from app.schemas import AnalysisResponse, BiasScoreOut, ArchetypeOut
+import asyncio
+import os
+import uuid
+from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
+from fastapi import APIRouter, HTTPException, UploadFile, File
+
+from app.services.ingestion import parse_file
 from app.services.scoring import run_full_analysis
 
 router = APIRouter()
 
+_cpu_workers = max(1, (os.cpu_count() or 2) - 1)
+_process_pool = ProcessPoolExecutor(max_workers=_cpu_workers)
 
-async def _load_trades_df(db: AsyncSession, session_id: str) -> pd.DataFrame:
-    """Load all trades for a session into a DataFrame."""
-    result = await db.execute(
-        select(Trade)
-        .where(Trade.session_id == session_id)
-        .order_by(Trade.timestamp)
-    )
-    trades = result.scalars().all()
-    if not trades:
-        raise HTTPException(status_code=404, detail="No trades found for this session")
-
-    records = [
-        {
-            "timestamp": t.timestamp,
-            "asset": t.asset,
-            "side": t.side,
-            "quantity": t.quantity,
-            "entry_price": t.entry_price,
-            "exit_price": t.exit_price,
-            "profit_loss": t.profit_loss,
-            "balance": t.balance,
-        }
-        for t in trades
-    ]
-    return pd.DataFrame(records)
+# In-memory cache: session_id → results.  OrderedDict so we can evict oldest.
+_MAX_CACHE = 50
+_results_cache: OrderedDict[str, dict] = OrderedDict()
 
 
-@router.post("/analysis/{session_id}")
-async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
-    """Run full bias analysis on uploaded trades."""
-    # Verify session exists
-    sess_result = await db.execute(
-        select(AnalysisSession).where(AnalysisSession.id == session_id)
-    )
-    session = sess_result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+def _cache_put(session_id: str, data: dict):
+    _results_cache[session_id] = data
+    while len(_results_cache) > _MAX_CACHE:
+        _results_cache.popitem(last=False)
 
-    df = await _load_trades_df(db, session_id)
+
+def _parse_and_analyse(contents: bytes, filename: str) -> dict:
+    """CPU-bound work: parse file + run full analysis. Runs in a worker process."""
+    df = parse_file(contents, filename)
     results = run_full_analysis(df)
+    results["trade_count"] = len(df)
+    results["filename"] = filename
+    return results
 
-    # Persist bias results
-    existing = await db.execute(
-        select(BiasResult).where(BiasResult.session_id == session_id)
-    )
-    bias_result = existing.scalar_one_or_none()
-    if bias_result:
-        bias_result.overtrading_score = results["overtrading"]["score"]
-        bias_result.overtrading_details = results["overtrading"]["details"]
-        bias_result.loss_aversion_score = results["loss_aversion"]["score"]
-        bias_result.loss_aversion_details = results["loss_aversion"]["details"]
-        bias_result.revenge_trading_score = results["revenge_trading"]["score"]
-        bias_result.revenge_trading_details = results["revenge_trading"]["details"]
-        bias_result.archetype = results["archetype"]["label"]
-        bias_result.archetype_details = results["archetype"]["details"]
-        bias_result.feature_summary = results["feature_summary"]
-    else:
-        bias_result = BiasResult(
-            session_id=session_id,
-            overtrading_score=results["overtrading"]["score"],
-            overtrading_details=results["overtrading"]["details"],
-            loss_aversion_score=results["loss_aversion"]["score"],
-            loss_aversion_details=results["loss_aversion"]["details"],
-            revenge_trading_score=results["revenge_trading"]["score"],
-            revenge_trading_details=results["revenge_trading"]["details"],
-            archetype=results["archetype"]["label"],
-            archetype_details=results["archetype"]["details"],
-            feature_summary=results["feature_summary"],
+
+@router.post("/upload")
+async def upload_and_analyse(file: UploadFile = File(...)):
+    """Upload a CSV/Excel file → parse, analyse, return results with a session_id."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    loop = asyncio.get_running_loop()
+    try:
+        results = await loop.run_in_executor(
+            _process_pool, _parse_and_analyse, contents, file.filename
         )
-        db.add(bias_result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
-    await db.commit()
-
-    return {
+    # Generate a session_id so the frontend can call /api/analysis/{id}
+    session_id = str(uuid.uuid4())
+    response = {
         "session_id": session_id,
-        "trade_count": len(df),
+        "filename": results["filename"],
+        "trade_count": results["trade_count"],
         "overtrading": results["overtrading"],
         "loss_aversion": results["loss_aversion"],
         "revenge_trading": results["revenge_trading"],
@@ -101,60 +74,33 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
         "position_scatter": results["position_scatter"],
     }
 
+    # Cache so GET/POST /analysis/{session_id} can return the same data
+    _cache_put(session_id, response)
+
+    return response
+
+
+@router.post("/analysis/{session_id}")
+async def get_analysis_post(session_id: str):
+    """Return cached analysis results by session_id (POST variant)."""
+    if session_id not in _results_cache:
+        raise HTTPException(status_code=404, detail="Session not found or expired. Please re-upload.")
+    return _results_cache[session_id]
+
 
 @router.get("/analysis/{session_id}")
-async def get_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
-    """Get cached analysis results (without re-running)."""
-    result = await db.execute(
-        select(BiasResult).where(BiasResult.session_id == session_id)
-    )
-    bias = result.scalar_one_or_none()
-    if not bias:
-        raise HTTPException(status_code=404, detail="Analysis not found. Run POST /api/analysis/{session_id} first.")
-
-    return {
-        "session_id": session_id,
-        "overtrading": {
-            "score": bias.overtrading_score,
-            "band": _band(bias.overtrading_score),
-            "details": bias.overtrading_details,
-        },
-        "loss_aversion": {
-            "score": bias.loss_aversion_score,
-            "band": _band(bias.loss_aversion_score),
-            "details": bias.loss_aversion_details,
-        },
-        "revenge_trading": {
-            "score": bias.revenge_trading_score,
-            "band": _band(bias.revenge_trading_score),
-            "details": bias.revenge_trading_details,
-        },
-        "archetype": {
-            "label": bias.archetype,
-            "details": bias.archetype_details,
-        },
-        "feature_summary": bias.feature_summary,
-        "coach_output": bias.coach_output,
-    }
+async def get_analysis(session_id: str):
+    """Return cached analysis results by session_id (GET variant)."""
+    if session_id not in _results_cache:
+        raise HTTPException(status_code=404, detail="Session not found or expired. Please re-upload.")
+    return _results_cache[session_id]
 
 
-@router.get("/sessions")
-async def list_sessions(db: AsyncSession = Depends(get_db)):
-    """List all analysis sessions."""
-    result = await db.execute(
-        select(AnalysisSession).order_by(AnalysisSession.created_at.desc())
-    )
-    sessions = result.scalars().all()
-    return [
-        {
-            "id": str(s.id),
-            "filename": s.filename,
-            "trade_count": s.trade_count,
-            "status": s.status,
-            "created_at": s.created_at.isoformat() if s.created_at else None,
-        }
-        for s in sessions
-    ]
+# Keep /analyse as an alias so both paths work
+@router.post("/analyse")
+async def analyse_trades(file: UploadFile = File(...)):
+    """Alias for /upload — same stateless behaviour."""
+    return await upload_and_analyse(file)
 
 
 def _band(score: float) -> str:

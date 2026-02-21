@@ -1,12 +1,8 @@
-"""AI Trading Coach router."""
+"""AI Trading Coach router – stateless: accepts analysis data directly."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException
 
-from app.database import get_db
-from app.models import BiasResult
-from app.schemas import CoachRequest
+from app.schemas import CoachRequest, AnalysisResponse
 from app.services.coach import generate_coaching
 
 router = APIRouter()

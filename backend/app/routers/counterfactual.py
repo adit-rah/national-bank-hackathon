@@ -1,69 +1,44 @@
-"""Counterfactual simulation router."""
+"""Counterfactual router – stateless: upload file, run simulation, return results."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
+import os
+from concurrent.futures import ProcessPoolExecutor
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 
-from app.database import get_db
-from app.models import AnalysisSession, Trade
-from app.schemas import CounterfactualRequest
-from app.services.features import compute_trade_features
+from app.services.ingestion import parse_file
 from app.services.counterfactual import simulate
-import pandas as pd
 
 router = APIRouter()
 
+_cpu_workers = max(1, (os.cpu_count() or 2) - 1)
+_process_pool = ProcessPoolExecutor(max_workers=_cpu_workers)
 
-@router.post("/counterfactual/{session_id}")
+
+def _parse_and_simulate(contents: bytes, filename: str, remove_worst_pct: float) -> dict:
+    """CPU-bound work: parse file + run counterfactual sim. Runs in a worker process."""
+    df = parse_file(contents, filename)
+    return simulate(df, remove_worst_pct=remove_worst_pct)
+
+
+@router.post("/counterfactual")
 async def run_counterfactual(
-    session_id: str,
-    params: CounterfactualRequest,
-    db: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),
+    remove_worst_pct: float = Query(0.1, ge=0.0, le=1.0),
 ):
-    """Run a counterfactual simulation on a session's trades."""
-    # Verify session
-    sess_result = await db.execute(
-        select(AnalysisSession).where(AnalysisSession.id == session_id)
-    )
-    if not sess_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Session not found")
+    """Upload a CSV/Excel → get counterfactual simulation back. No persistence."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
 
-    # Load trades
-    result = await db.execute(
-        select(Trade)
-        .where(Trade.session_id == session_id)
-        .order_by(Trade.timestamp)
-    )
-    trades = result.scalars().all()
-    if not trades:
-        raise HTTPException(status_code=404, detail="No trades found")
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file")
 
-    records = [
-        {
-            "timestamp": t.timestamp,
-            "asset": t.asset,
-            "side": t.side,
-            "quantity": t.quantity,
-            "entry_price": t.entry_price,
-            "exit_price": t.exit_price,
-            "profit_loss": t.profit_loss,
-            "balance": t.balance,
-        }
-        for t in trades
-    ]
-    df = pd.DataFrame(records)
-    df = compute_trade_features(df)
+    loop = asyncio.get_running_loop()
+    try:
+        results = await loop.run_in_executor(
+            _process_pool, _parse_and_simulate, contents, file.filename, remove_worst_pct
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
-    sim_result = simulate(
-        df,
-        max_position_pct=params.max_position_pct,
-        stop_loss_pct=params.stop_loss_pct,
-        max_daily_trades=params.max_daily_trades,
-        cooldown_minutes=params.cooldown_minutes,
-    )
-
-    return {
-        "session_id": session_id,
-        "params": params.model_dump(),
-        **sim_result,
-    }
+    return results
