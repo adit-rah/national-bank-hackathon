@@ -45,6 +45,7 @@ export default function CoachPanel({ sessionId }: Props) {
             <option value="">Default Provider</option>
             <option value="openai">OpenAI (GPT-4o)</option>
             <option value="anthropic">Anthropic (Claude)</option>
+            <option value="gemini">Google Gemini</option>
           </select>
 
           <button
