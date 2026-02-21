@@ -1,6 +1,8 @@
 """Bias detection engine — overtrading, loss aversion, revenge trading.
 
 Each bias is scored 0–100 (continuous) with supporting detail dicts.
+Scoring uses sigmoid-based transforms for smooth 0–100 mapping with
+clear differentiation between healthy and problematic behaviour.
 """
 
 import numpy as np
@@ -10,15 +12,30 @@ from scipy import stats
 from app.utils import clamp
 
 
+def _sigmoid(x: float, midpoint: float = 0.0, steepness: float = 1.0) -> float:
+    """Logistic sigmoid mapped to 0–100.
+
+    midpoint: value of x where output = 50
+    steepness: how fast the curve transitions (higher = sharper)
+    """
+    return float(100 / (1 + np.exp(-steepness * (x - midpoint))))
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Overtrading
 # ──────────────────────────────────────────────────────────────────────────────
 
 def detect_overtrading(df: pd.DataFrame) -> tuple[float, dict]:
-    """Score 0-100 for overtrading tendency."""
+    """Score 0-100 for overtrading tendency.
+
+    Key signals:
+    - Raw trade frequency (trades per hour)
+    - Post-loss frequency acceleration
+    - Trade clustering density
+    - Correlation between losing streaks and trade speed
+    """
     details: dict = {}
 
-    # 1. Trade frequency z-score
     duration_hours = (df["timestamp"].max() - df["timestamp"].min()).total_seconds() / 3600
     if duration_hours <= 0:
         return 0.0, {"reason": "insufficient_data"}
@@ -26,56 +43,64 @@ def detect_overtrading(df: pd.DataFrame) -> tuple[float, dict]:
     trades_per_hour = len(df) / duration_hours
     details["trades_per_hour"] = round(trades_per_hour, 2)
 
-    # Baseline: assume 2-5 trades/hour is normal
-    baseline_mean, baseline_std = 3.5, 2.0
-    freq_z = (trades_per_hour - baseline_mean) / baseline_std
-    freq_score = clamp(freq_z * 20 + 30, 0, 100)
-    details["frequency_z_score"] = round(freq_z, 3)
+    # ── 1. Frequency score (sigmoid: 60/hr → ~20, 120/hr → ~50, 360/hr → ~90) ──
+    freq_score = _sigmoid(trades_per_hour, midpoint=120, steepness=0.02)
+    details["frequency_score_raw"] = round(freq_score, 1)
 
-    # 2. Correlation between loss streak and trade frequency
+    # ── 2. Post-loss frequency acceleration ──
+    if "after_loss" in df.columns and "time_since_last" in df.columns:
+        post_loss_times = df[df["after_loss"]]["time_since_last"]
+        normal_times = df[~df["after_loss"]]["time_since_last"]
+
+        if len(post_loss_times) > 5 and len(normal_times) > 5:
+            post_loss_mean = post_loss_times.mean()
+            normal_mean = normal_times.mean()
+
+            if normal_mean > 0 and post_loss_mean > 0:
+                # Ratio < 1 = trading faster after losses (overtrading signal)
+                cooldown_ratio = post_loss_mean / normal_mean
+                # sigmoid centered at 1.0 (neutral), inverted: lower ratio = higher score
+                accel_score = _sigmoid(1 - cooldown_ratio, midpoint=0.05, steepness=30)
+                details["post_loss_cooldown_ratio"] = round(cooldown_ratio, 4)
+            else:
+                accel_score = 0
+        else:
+            accel_score = 0
+    else:
+        accel_score = 0
+
+    # ── 3. Trade clustering density ──
+    if "trades_1h" in df.columns:
+        cluster_density = df["trades_1h"].mean()
+        # sigmoid: density of 30 → ~20, 60 → ~50, 200+ → ~90
+        cluster_score = _sigmoid(cluster_density, midpoint=60, steepness=0.03)
+        details["avg_cluster_density_1h"] = round(float(cluster_density), 2)
+    else:
+        cluster_score = 0
+
+    # ── 4. Loss-streak / frequency correlation ──
     if "streak_index" in df.columns and "trades_1h" in df.columns:
         loss_mask = df["streak_index"] < 0
-        if loss_mask.sum() > 5:
+        if loss_mask.sum() > 10:
             corr, p_val = stats.pearsonr(
                 df.loc[loss_mask, "streak_index"].abs(),
                 df.loc[loss_mask, "trades_1h"],
             )
             details["loss_streak_freq_corr"] = round(float(corr), 4)
             details["loss_streak_freq_pval"] = round(float(p_val), 6)
-            corr_score = clamp(float(corr) * 60 + 30, 0, 100)
+            # Only count positive correlation as overtrading signal
+            corr_score = _sigmoid(max(float(corr), 0), midpoint=0.15, steepness=15) if p_val < 0.1 else 0
         else:
             corr_score = 0
     else:
         corr_score = 0
 
-    # 3. Post-loss frequency increase
-    if "after_loss" in df.columns:
-        post_loss_freq = df[df["after_loss"]]["time_since_last"].mean()
-        normal_freq = df[~df["after_loss"]]["time_since_last"].mean()
-        if normal_freq and normal_freq > 0 and post_loss_freq and post_loss_freq > 0:
-            # Ratio < 1 means trading faster after losses → overtrading signal
-            ratio = post_loss_freq / normal_freq
-            pl_score = clamp((1 - ratio) * 100 + 30, 0, 100)
-            details["post_loss_cooldown_ratio"] = round(ratio, 3)
-        else:
-            pl_score = 0
-    else:
-        pl_score = 0
-
-    # 4. Rolling cluster density
-    if "trades_1h" in df.columns:
-        cluster_density = df["trades_1h"].mean()
-        cluster_score = clamp((cluster_density - 3) * 10, 0, 100)
-        details["avg_cluster_density_1h"] = round(float(cluster_density), 2)
-    else:
-        cluster_score = 0
-
-    composite = 0.35 * freq_score + 0.25 * corr_score + 0.20 * pl_score + 0.20 * cluster_score
+    composite = 0.40 * freq_score + 0.25 * accel_score + 0.20 * cluster_score + 0.15 * corr_score
     details["sub_scores"] = {
         "frequency": round(freq_score, 1),
-        "loss_streak_correlation": round(corr_score, 1),
-        "post_loss_frequency": round(pl_score, 1),
+        "post_loss_acceleration": round(accel_score, 1),
         "cluster_density": round(cluster_score, 1),
+        "loss_streak_correlation": round(corr_score, 1),
     }
     return round(clamp(composite), 1), details
 
@@ -85,7 +110,14 @@ def detect_overtrading(df: pd.DataFrame) -> tuple[float, dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def detect_loss_aversion(df: pd.DataFrame) -> tuple[float, dict]:
-    """Score 0-100 for loss aversion."""
+    """Score 0-100 for loss aversion.
+
+    Key signals:
+    - Loss / win magnitude ratio (are losses much bigger than wins?)
+    - Holding time asymmetry (are losses held longer?)
+    - Loss distribution skew (are there outlier catastrophic losses?)
+    - Win rate paradox (high win rate but negative expectancy = classic aversion)
+    """
     details: dict = {}
     wins = df[df["is_win"]]
     losses = df[~df["is_win"]]
@@ -93,51 +125,78 @@ def detect_loss_aversion(df: pd.DataFrame) -> tuple[float, dict]:
     if len(wins) < 5 or len(losses) < 5:
         return 0.0, {"reason": "insufficient_data"}
 
-    # 1. Holding asymmetry: losses held longer than wins
-    avg_hold_win = wins["holding_duration"].mean()
-    avg_hold_loss = losses["holding_duration"].mean()
-    if avg_hold_win > 0:
-        hold_ratio = avg_hold_loss / avg_hold_win
-    else:
-        hold_ratio = 1.0
-    details["holding_ratio_loss_to_win"] = round(float(hold_ratio), 3)
-    hold_score = clamp((hold_ratio - 1) * 60 + 20, 0, 100)
-
-    # t-test on holding times
-    t_stat, p_val = stats.ttest_ind(
-        losses["holding_duration"].dropna(),
-        wins["holding_duration"].dropna(),
-        equal_var=False,
-    )
-    details["holding_ttest_t"] = round(float(t_stat), 4)
-    details["holding_ttest_p"] = round(float(p_val), 6)
-    details["holding_significant"] = bool(p_val < 0.05)
-
-    # 2. Loss magnitude asymmetry
+    # ── 1. Loss/win magnitude ratio (primary signal) ──
     avg_loss_size = abs(losses["profit_loss"].mean())
     avg_win_size = abs(wins["profit_loss"].mean())
+
     if avg_win_size > 0:
         magnitude_ratio = avg_loss_size / avg_win_size
     else:
         magnitude_ratio = 1.0
-    details["loss_win_magnitude_ratio"] = round(float(magnitude_ratio), 3)
-    mag_score = clamp((magnitude_ratio - 1) * 50 + 25, 0, 100)
 
-    # 3. Median vs mean loss divergence (skew signal)
+    details["loss_win_magnitude_ratio"] = round(float(magnitude_ratio), 3)
+    details["avg_loss"] = round(float(avg_loss_size), 2)
+    details["avg_win"] = round(float(avg_win_size), 2)
+
+    # Use log-scale sigmoid: ratio 1.0 → ~5, ratio 2.0 → ~50, ratio 10+ → ~90+
+    log_ratio = np.log1p(max(magnitude_ratio - 1, 0))
+    mag_score = _sigmoid(log_ratio, midpoint=0.7, steepness=4)
+
+    # ── 2. Holding time asymmetry ──
+    avg_hold_win = wins["holding_duration"].mean() if "holding_duration" in wins.columns else 0
+    avg_hold_loss = losses["holding_duration"].mean() if "holding_duration" in losses.columns else 0
+
+    if avg_hold_win > 0:
+        hold_ratio = avg_hold_loss / avg_hold_win
+    else:
+        hold_ratio = 1.0
+
+    details["holding_ratio_loss_to_win"] = round(float(hold_ratio), 3)
+    # Ratio 1.0 → ~5, 1.5 → ~50, 3.0+ → ~90
+    hold_score = _sigmoid(hold_ratio - 1, midpoint=0.5, steepness=4)
+
+    # t-test on holding times
+    if avg_hold_win > 0 and avg_hold_loss > 0:
+        t_stat, p_val = stats.ttest_ind(
+            losses["holding_duration"].dropna(),
+            wins["holding_duration"].dropna(),
+            equal_var=False,
+        )
+        details["holding_ttest_t"] = round(float(t_stat), 4)
+        details["holding_ttest_p"] = round(float(p_val), 6)
+        details["holding_significant"] = bool(p_val < 0.05)
+    else:
+        details["holding_significant"] = False
+
+    # ── 3. Loss distribution skew (fat tail = letting losses run) ──
     median_loss = abs(losses["profit_loss"].median())
-    mean_loss = avg_loss_size
     if median_loss > 0:
-        skew_ratio = mean_loss / median_loss
+        skew_ratio = avg_loss_size / median_loss
     else:
         skew_ratio = 1.0
-    details["loss_mean_median_ratio"] = round(float(skew_ratio), 3)
-    skew_score = clamp((skew_ratio - 1) * 80 + 15, 0, 100)
 
-    composite = 0.40 * hold_score + 0.35 * mag_score + 0.25 * skew_score
+    details["loss_mean_median_ratio"] = round(float(skew_ratio), 3)
+    # Ratio 1.0 → ~5, 2.0 → ~50, 5+ → ~90
+    skew_score = _sigmoid(skew_ratio - 1, midpoint=1.0, steepness=2.5)
+
+    # ── 4. Win rate paradox (high win rate + poor risk/reward = aversion) ──
+    win_rate = len(wins) / len(df)
+    expectancy = df["profit_loss"].mean()
+    # If win rate is high but expectancy is low/negative, strong aversion signal
+    if win_rate > 0.55 and magnitude_ratio > 1.5:
+        paradox_score = _sigmoid(win_rate * magnitude_ratio, midpoint=1.5, steepness=2)
+    else:
+        paradox_score = 0
+    details["win_rate"] = round(float(win_rate * 100), 1)
+    details["expectancy"] = round(float(expectancy), 2)
+
+    # Weighted composite — magnitude ratio dominates since it's the strongest signal
+    composite = 0.45 * mag_score + 0.20 * hold_score + 0.15 * skew_score + 0.20 * paradox_score
     details["sub_scores"] = {
-        "holding_asymmetry": round(hold_score, 1),
         "magnitude_asymmetry": round(mag_score, 1),
+        "holding_asymmetry": round(hold_score, 1),
         "loss_skew": round(skew_score, 1),
+        "win_rate_paradox": round(paradox_score, 1),
     }
     return round(clamp(composite), 1), details
 
@@ -147,60 +206,108 @@ def detect_loss_aversion(df: pd.DataFrame) -> tuple[float, dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
-    """Score 0-100 for revenge trading."""
+    """Score 0-100 for revenge trading.
+
+    Key signals:
+    - Position size increase after losses
+    - Risk escalation during loss streaks
+    - Reduced cooldown period after losses
+    - Increasing loss magnitude during streaks (doubling down)
+    """
     details: dict = {}
 
     if len(df) < 10:
         return 0.0, {"reason": "insufficient_data"}
 
-    # 1. Post-loss aggression index (position size after loss vs after win)
+    # ── 1. Post-loss aggression index ──
     after_loss = df[df["after_loss"]]
     after_win = df[~df["after_loss"]]
 
-    avg_size_after_loss = after_loss["notional"].mean() if len(after_loss) else 0
-    avg_size_after_win = after_win["notional"].mean() if len(after_win) else 1
+    avg_size_after_loss = after_loss["notional"].abs().mean() if len(after_loss) else 0
+    avg_size_after_win = after_win["notional"].abs().mean() if len(after_win) else 1
 
     if avg_size_after_win > 0:
         aggression_index = avg_size_after_loss / avg_size_after_win
     else:
         aggression_index = 1.0
-    details["post_loss_aggression_index"] = round(float(aggression_index), 3)
-    aggr_score = clamp((aggression_index - 1) * 80 + 20, 0, 100)
 
-    # 2. Risk spike after 2+ loss streak
+    details["post_loss_aggression_index"] = round(float(aggression_index), 3)
+    # Ratio 1.0 → ~5, 1.2 → ~50, 1.5+ → ~85+
+    aggr_score = _sigmoid(aggression_index - 1, midpoint=0.15, steepness=20)
+
+    # ── 2. Risk escalation during loss streaks ──
     streak_mask = df["streak_index"] <= -2
     if streak_mask.sum() > 3:
         streak_trades = df[streak_mask]
         normal_trades = df[~streak_mask & ~df["after_loss"]]
-        avg_risk_streak = streak_trades["position_size_pct"].mean() if len(streak_trades) else 0
-        avg_risk_normal = normal_trades["position_size_pct"].mean() if len(normal_trades) else 1
+        avg_risk_streak = streak_trades["notional"].abs().mean() if len(streak_trades) else 0
+        avg_risk_normal = normal_trades["notional"].abs().mean() if len(normal_trades) else 1
+
         if avg_risk_normal > 0:
             risk_spike = avg_risk_streak / avg_risk_normal
         else:
             risk_spike = 1.0
+
         details["risk_spike_during_streak"] = round(float(risk_spike), 3)
-        spike_score = clamp((risk_spike - 1) * 70 + 20, 0, 100)
+        spike_score = _sigmoid(risk_spike - 1, midpoint=0.1, steepness=20)
     else:
         spike_score = 0
         details["risk_spike_during_streak"] = None
 
-    # 3. Reduced cooldown after loss
+    # ── 3. Reduced cooldown after loss ──
     if "time_since_last" in df.columns:
         cooldown_after_loss = after_loss["time_since_last"].mean() if len(after_loss) else 0
         cooldown_after_win = after_win["time_since_last"].mean() if len(after_win) else 1
+
         if cooldown_after_win > 0 and cooldown_after_loss > 0:
             cooldown_ratio = cooldown_after_loss / cooldown_after_win
-            details["cooldown_ratio"] = round(float(cooldown_ratio), 3)
-            cool_score = clamp((1 - cooldown_ratio) * 100 + 20, 0, 100)
+            details["cooldown_ratio"] = round(float(cooldown_ratio), 4)
+            # Inverted: lower ratio = less cooldown = more revenge
+            cool_score = _sigmoid(1 - cooldown_ratio, midpoint=0.05, steepness=30)
         else:
             cool_score = 0
+            details["cooldown_ratio"] = None
     else:
         cool_score = 0
 
-    composite = 0.40 * aggr_score + 0.30 * spike_score + 0.30 * cool_score
+    # ── 4. Loss magnitude escalation during streaks ──
+    # (Do losses get BIGGER during a streak? = doubling down / revenge)
+    if streak_mask.sum() > 3:
+        first_loss = df[df["streak_index"] == -1]["profit_loss"].abs().mean()
+        deep_loss = df[df["streak_index"] <= -3]["profit_loss"].abs().mean() if (df["streak_index"] <= -3).sum() > 3 else first_loss
+
+        if first_loss > 0:
+            escalation = deep_loss / first_loss
+        else:
+            escalation = 1.0
+
+        details["loss_escalation_ratio"] = round(float(escalation), 3)
+        escalation_score = _sigmoid(escalation - 1, midpoint=0.1, steepness=15)
+    else:
+        escalation_score = 0
+        details["loss_escalation_ratio"] = None
+
+    # ── 5. Position size variability (erratic = emotional) ──
+    if "notional" in df.columns:
+        cv = df["notional"].std() / df["notional"].abs().mean() if df["notional"].abs().mean() > 0 else 0
+        # CV ~2.5 is normal for random trading; 4+ is erratic
+        variability_score = _sigmoid(float(cv), midpoint=3.5, steepness=2.5)
+        details["position_size_cv"] = round(float(cv), 3)
+    else:
+        variability_score = 0
+
+    composite = (
+        0.25 * aggr_score
+        + 0.25 * spike_score
+        + 0.15 * cool_score
+        + 0.20 * escalation_score
+        + 0.15 * variability_score
+    )
     details["sub_scores"] = {
         "aggression_index": round(aggr_score, 1),
         "risk_spike": round(spike_score, 1),
         "cooldown_reduction": round(cool_score, 1),
+        "loss_escalation": round(escalation_score, 1),
+        "position_variability": round(variability_score, 1),
     }
     return round(clamp(composite), 1), details

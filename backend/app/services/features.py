@@ -35,14 +35,18 @@ def compute_trade_features(df: pd.DataFrame) -> pd.DataFrame:
     df["streak_index"] = df.groupby(streak_groups).cumcount() + 1
     df.loc[~df["is_win"], "streak_index"] = -df.loc[~df["is_win"], "streak_index"]
 
-    # ── Rolling trade clusters (1 h / 4 h) ─────────────────────────
+    # ── Rolling trade clusters (time-based) ─────────────────────────
     df["ts_epoch"] = df["timestamp"].astype(np.int64) // 10**9
-    df["trades_1h"] = df["ts_epoch"].rolling(window=60, min_periods=1).apply(
-        lambda x: ((x.iloc[-1] - x) <= 3600).sum(), raw=False
-    )
-    df["trades_4h"] = df["ts_epoch"].rolling(window=240, min_periods=1).apply(
-        lambda x: ((x.iloc[-1] - x) <= 14400).sum(), raw=False
-    )
+    # Use searchsorted for O(n log n) time-based window counting
+    epochs = df["ts_epoch"].values
+    trades_1h = np.empty(len(df), dtype=np.float64)
+    trades_4h = np.empty(len(df), dtype=np.float64)
+    for i in range(len(df)):
+        t = epochs[i]
+        trades_1h[i] = np.searchsorted(epochs, t, side="right") - np.searchsorted(epochs, t - 3600, side="left")
+        trades_4h[i] = np.searchsorted(epochs, t, side="right") - np.searchsorted(epochs, t - 14400, side="left")
+    df["trades_1h"] = trades_1h
+    df["trades_4h"] = trades_4h
 
     # ── Volatility proxy (rolling std of pnl) ──────────────────────
     df["volatility_proxy"] = df["profit_loss"].rolling(window=20, min_periods=1).std().fillna(0)
