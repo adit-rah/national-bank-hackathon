@@ -4,10 +4,11 @@ from typing import Literal
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://biasdetector:biasdetector@db:5432/biasdetector"
-    LLM_PROVIDER: Literal["openai", "anthropic", "gemini"] = "openai"
+    LLM_PROVIDER: Literal["openai", "anthropic", "gemini", "groq"] = "groq"
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = "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"
 
     class Config:
         env_file = ".env"

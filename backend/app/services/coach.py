@@ -1,4 +1,4 @@
-"""AI Trading Coach – tri-provider (OpenAI + Anthropic + Gemini) LLM integration."""
+"""AI Trading Coach – multi-provider (OpenAI + Anthropic + Gemini + Groq) LLM integration."""
 
 import json
 from typing import Optional
@@ -160,6 +160,7 @@ def _pick_provider(preferred: str) -> str | None:
         "openai": settings.OPENAI_API_KEY,
         "anthropic": settings.ANTHROPIC_API_KEY,
         "gemini": settings.GEMINI_API_KEY,
+        "groq": settings.GROQ_API_KEY,
     }
 
     # Try preferred first
@@ -196,11 +197,43 @@ async def generate_coaching(
             return await _call_anthropic(user_prompt)
         elif provider == "gemini":
             return await _call_gemini(user_prompt)
+        elif provider == "groq":
+            return await _call_groq(user_prompt)
         else:
             return await _call_openai(user_prompt)
-    except Exception:
+    except Exception as e:
         # LLM failed — gracefully degrade to template
+        import logging
+        logging.getLogger(__name__).warning("LLM call failed, using template fallback: %s", e)
         return _generate_fallback(analysis)
+
+
+async def _call_groq(user_prompt: str) -> dict:
+    """Call Groq API (Llama models)."""
+    from groq import AsyncGroq
+
+    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+    response = await client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.7,
+        max_tokens=2000,
+        response_format={"type": "json_object"},
+    )
+    content = response.choices[0].message.content
+    try:
+        return {"provider": "groq", **json.loads(content)}
+    except json.JSONDecodeError:
+        return {
+            "provider": "groq",
+            "feedback": content,
+            "discipline_plan": [],
+            "daily_checklist": [],
+            "journaling_prompts": [],
+        }
 
 
 async def _call_openai(user_prompt: str) -> dict:
