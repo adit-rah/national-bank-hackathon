@@ -57,18 +57,133 @@ Provide your coaching response as JSON.
 """
 
 
+def _generate_fallback(analysis: dict) -> dict:
+    """Template-based coaching when LLM is unavailable."""
+    ot = analysis.get("overtrading", {})
+    la = analysis.get("loss_aversion", {})
+    rt = analysis.get("revenge_trading", {})
+    arch = analysis.get("archetype", {})
+    summary = analysis.get("feature_summary", {})
+
+    # Find the worst bias
+    biases = [
+        ("Overtrading", ot.get("score", 0), ot.get("details", {})),
+        ("Loss Aversion", la.get("score", 0), la.get("details", {})),
+        ("Revenge Trading", rt.get("score", 0), rt.get("details", {})),
+    ]
+    biases.sort(key=lambda x: x[1], reverse=True)
+    worst_name, worst_score, worst_details = biases[0]
+
+    win_rate = summary.get("win_rate", 0)
+    avg_win = summary.get("avg_win", 0)
+    avg_loss = summary.get("avg_loss", 0)
+    trades_per_hour = summary.get("trades_per_hour", 0)
+    sharpe = summary.get("sharpe_ratio", 0)
+
+    feedback_parts = [
+        f"Based on {summary.get('total_trades', 0)} trades analyzed, your most significant bias is {worst_name} with a severity score of {worst_score}/100.",
+    ]
+
+    if worst_name == "Overtrading":
+        feedback_parts.append(
+            f"You're averaging {trades_per_hour:.1f} trades per hour. "
+            f"Post-loss cooldown ratio is {worst_details.get('post_loss_cooldown_ratio', 'N/A')}, "
+            f"suggesting you trade faster after losses. This impulsive pattern erodes edge."
+        )
+    elif worst_name == "Loss Aversion":
+        ratio = worst_details.get("holding_ratio_loss_to_win", 1)
+        mag = worst_details.get("loss_win_magnitude_ratio", 1)
+        feedback_parts.append(
+            f"You hold losses {ratio:.1f}x longer than wins, and your average loss is {mag:.1f}x "
+            f"your average win (${abs(avg_loss):.2f} vs ${avg_win:.2f}). This asymmetry is the "
+            f"hallmark of loss aversion — the reluctance to realize losses."
+        )
+    else:
+        agg = worst_details.get("post_loss_aggression_index", 1)
+        feedback_parts.append(
+            f"Your post-loss aggression index is {agg:.2f} — meaning you increase position sizes "
+            f"after losses. Combined with a win rate of {win_rate:.1f}% and Sharpe of {sharpe:.2f}, "
+            f"this revenge pattern compounds drawdowns."
+        )
+
+    feedback_parts.append(
+        f"Your trader archetype is '{arch.get('label', 'Unknown')}'. "
+        f"Tailoring your discipline plan to this profile will yield the best results."
+    )
+
+    discipline_plan = []
+    if ot.get("score", 0) >= 30:
+        discipline_plan.append(f"Limit yourself to a maximum of {max(int(trades_per_hour * 0.6), 3)} trades per hour to reduce impulsive entries.")
+    if la.get("score", 0) >= 30:
+        discipline_plan.append("Set a hard stop-loss at 2% of account balance on every trade — no exceptions.")
+        discipline_plan.append("Use a timer: if a losing trade has been open 50% longer than your average win hold time, review and close.")
+    if rt.get("score", 0) >= 30:
+        discipline_plan.append("After any loss, enforce a mandatory 10-minute cooldown before your next trade.")
+        discipline_plan.append("Never increase position size on the trade immediately following a loss.")
+    discipline_plan.append("Review your trading journal at end of day and score yourself on plan adherence.")
+
+    checklist = [
+        "Review overnight positions and set alerts before market open",
+        "Write down your maximum loss limit for the day",
+        "Take a 5-minute break after every 3 consecutive trades",
+        "Log the emotional state (1-10 calm scale) before each trade",
+        "End-of-day review: did I follow my discipline plan?",
+    ]
+
+    prompts = [
+        f"My biggest trading bias is {worst_name} ({worst_score}/100). What triggered it today?",
+        "Describe a trade today where I followed my plan perfectly. How did it feel?",
+        "What would a disciplined version of me do differently tomorrow?",
+        f"My win rate is {win_rate:.1f}%. Am I focusing on quality setups or chasing quantity?",
+    ]
+
+    return {
+        "provider": "fallback",
+        "feedback": "\n\n".join(feedback_parts),
+        "discipline_plan": discipline_plan,
+        "daily_checklist": checklist,
+        "journaling_prompts": prompts,
+    }
+
+
 async def generate_coaching(
     analysis: dict,
     provider_override: Optional[str] = None,
 ) -> dict:
-    """Generate AI coaching based on analysis results."""
+    """Generate AI coaching based on analysis results.
+
+    Falls back to template-based coaching if no API key is configured
+    or the LLM call fails.
+    """
     provider = provider_override or settings.LLM_PROVIDER
+
+    # Check if API key is available
+    if provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
+        if settings.OPENAI_API_KEY:
+            provider = "openai"  # auto-switch
+        else:
+            return _generate_fallback(analysis)
+    elif provider == "openai" and not settings.OPENAI_API_KEY:
+        if settings.ANTHROPIC_API_KEY:
+            provider = "anthropic"  # auto-switch
+        else:
+            return _generate_fallback(analysis)
+
+    # Skip placeholder keys
+    key = settings.OPENAI_API_KEY if provider == "openai" else settings.ANTHROPIC_API_KEY
+    if "your" in key.lower() or len(key) < 10:
+        return _generate_fallback(analysis)
+
     user_prompt = _build_user_prompt(analysis)
 
-    if provider == "anthropic":
-        return await _call_anthropic(user_prompt)
-    else:
-        return await _call_openai(user_prompt)
+    try:
+        if provider == "anthropic":
+            return await _call_anthropic(user_prompt)
+        else:
+            return await _call_openai(user_prompt)
+    except Exception:
+        # LLM failed — gracefully degrade to template
+        return _generate_fallback(analysis)
 
 
 async def _call_openai(user_prompt: str) -> dict:

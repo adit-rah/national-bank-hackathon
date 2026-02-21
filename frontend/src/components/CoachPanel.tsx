@@ -66,8 +66,14 @@ export default function CoachPanel({ sessionId }: Props) {
         <div className="space-y-6">
           {/* Provider badge */}
           <div className="flex items-center gap-2">
-            <span className="text-xs bg-dark-600 text-gray-400 px-3 py-1 rounded-full">
-              Powered by {result.provider === 'openai' ? 'GPT-4o' : 'Claude'}
+            <span className={`text-xs px-3 py-1 rounded-full ${
+              result.provider === 'fallback'
+                ? 'bg-accent-yellow/10 text-accent-yellow'
+                : 'bg-dark-600 text-gray-400'
+            }`}>
+              {result.provider === 'fallback'
+                ? 'Template-based (no API key configured)'
+                : `Powered by ${result.provider === 'openai' ? 'GPT-4o' : 'Claude'}`}
             </span>
           </div>
 

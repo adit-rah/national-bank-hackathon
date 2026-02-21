@@ -53,10 +53,7 @@ async def get_coaching(
         "feature_summary": bias.feature_summary or {},
     }
 
-    try:
-        coaching = await generate_coaching(analysis, provider_override=body.provider)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LLM call failed: {str(e)}")
+    coaching = await generate_coaching(analysis, provider_override=body.provider)
 
     # Cache coaching output
     bias.coach_output = coaching
