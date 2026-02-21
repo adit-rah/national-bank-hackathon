@@ -1,7 +1,12 @@
 """Counterfactual simulator – replay trade history under constraints."""
 
+import logging
+import time
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def simulate(
@@ -23,6 +28,12 @@ def simulate(
 
     Returns dict with original metrics, simulated metrics, improvement, and equity curves.
     """
+    t0 = time.perf_counter()
+    logger.info(
+        "Counterfactual simulation started | trades=%d position_cap=%s stop_loss=%s daily_limit=%s cooldown=%s",
+        len(df), max_position_pct, stop_loss_pct, max_daily_trades, cooldown_minutes,
+    )
+
     sim = df.copy()
     sim["included"] = True
 
@@ -53,25 +64,26 @@ def simulate(
             sim.loc[mask, "quantity"] = sim.loc[mask, "quantity"] * scale
             sim.loc[mask, "position_size_pct"] = max_position_pct
 
-    # ── 4. Stop-loss ───────────────────────────────────────────────
+    # ── 4. Stop-loss (uses running simulated balance) ────────────
+    start_bal = df["balance"].iloc[0] - df["profit_loss"].iloc[0]
     if stop_loss_pct is not None:
+        running_bal = start_bal
         for i in sim.index:
             if not sim.at[i, "included"]:
                 continue
-            bal = sim.at[i, "balance"]
-            if bal != 0:
-                loss_pct = abs(sim.at[i, "profit_loss"]) / abs(bal) * 100
-                if sim.at[i, "profit_loss"] < 0 and loss_pct > stop_loss_pct:
-                    # Cap the loss at stop_loss_pct of balance
-                    max_loss = -abs(bal) * stop_loss_pct / 100
-                    sim.at[i, "profit_loss"] = max_loss
+            if running_bal != 0:
+                pnl = sim.at[i, "profit_loss"]
+                loss_pct = abs(pnl) / abs(running_bal) * 100
+                if pnl < 0 and loss_pct > stop_loss_pct:
+                    sim.at[i, "profit_loss"] = -abs(running_bal) * stop_loss_pct / 100
+            running_bal += sim.at[i, "profit_loss"]
 
     # ── Recalculate simulated balance ──────────────────────────────
     included = sim[sim["included"]].copy()
     if len(included) == 0:
+        logger.warning("All %d trades excluded by constraints", len(df))
         return _empty_result(df)
 
-    start_bal = df["balance"].iloc[0] - df["profit_loss"].iloc[0]
     included["sim_balance"] = start_bal + included["profit_loss"].cumsum()
 
     # ── Compute metrics ────────────────────────────────────────────
@@ -87,15 +99,9 @@ def simulate(
         else:
             improvement[key] = 0
 
-    # Equity curves
-    orig_curve = [
-        {"timestamp": r["timestamp"].isoformat(), "balance": round(float(r["balance"]), 2)}
-        for _, r in df[["timestamp", "balance"]].iterrows()
-    ]
-    sim_curve = [
-        {"timestamp": r["timestamp"].isoformat(), "balance": round(float(r["sim_balance"]), 2)}
-        for _, r in included[["timestamp", "sim_balance"]].iterrows()
-    ]
+    # Equity curves (vectorized)
+    orig_curve = _build_equity_curve(df, "balance")
+    sim_curve = _build_equity_curve(included, "sim_balance")
 
     # Summary
     parts = []
@@ -106,6 +112,12 @@ def simulate(
     if "sharpe_ratio" in improvement and improvement["sharpe_ratio"] != 0:
         parts.append(f"Sharpe ratio would change by {improvement['sharpe_ratio']:+.1f}%")
     summary = "With these constraints, " + ", ".join(parts) + "." if parts else "No significant change."
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "Counterfactual simulation complete | included=%d/%d elapsed=%.1fms",
+        len(included), len(df), elapsed_ms,
+    )
 
     return {
         "original": orig_metrics,
@@ -133,11 +145,20 @@ def _compute_metrics(df: pd.DataFrame, balance_col: str) -> dict:
         "total_trades": len(df),
         "total_pnl": round(float(pnl.sum()), 2),
         "final_balance": round(float(bal.iloc[-1]), 2),
-        "max_drawdown_pct": round(float(dd.min()), 2),
+        "max_drawdown_pct": round(abs(float(dd.min())), 2),
         "sharpe_ratio": round(sharpe, 4),
         "volatility": round(float(pnl.std()), 2),
         "win_rate": round(float((pnl > 0).sum() / len(pnl) * 100), 2) if len(pnl) else 0,
     }
+
+
+def _build_equity_curve(df: pd.DataFrame, balance_col: str) -> list[dict]:
+    timestamps = df["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%S").tolist()
+    balances = df[balance_col].round(2).tolist()
+    return [
+        {"timestamp": ts, "balance": float(bal)}
+        for ts, bal in zip(timestamps, balances)
+    ]
 
 
 def _empty_result(df: pd.DataFrame) -> dict:
@@ -147,7 +168,7 @@ def _empty_result(df: pd.DataFrame) -> dict:
         "simulated": {k: 0 for k in orig},
         "improvement": {k: 0 for k in orig},
         "summary": "All trades were excluded by the constraints.",
-        "equity_curve_original": [],
+        "equity_curve_original": _build_equity_curve(df, "balance"),
         "equity_curve_simulated": [],
         "trades_original": len(df),
         "trades_simulated": 0,

@@ -17,17 +17,31 @@ const METRIC_NAMES: Record<string, string> = {
   max_drawdown_pct: 'Max Drawdown', sharpe_ratio: 'Sharpe', volatility: 'Volatility', win_rate: 'Win Rate',
 };
 
+function fmtMetric(key: string, value: number): string {
+  switch (key) {
+    case 'total_trades': return value.toLocaleString();
+    case 'total_pnl':
+    case 'final_balance': return '$' + value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    case 'sharpe_ratio': return value.toFixed(2);
+    case 'max_drawdown_pct':
+    case 'win_rate': return value.toFixed(1) + '%';
+    case 'volatility': return value.toFixed(1);
+    default: return value.toFixed(1);
+  }
+}
+
 export default function Counterfactual({ sessionId }: Props) {
   const [vals, setVals] = useState<Record<string, number>>({ position: 5, stopLoss: 2, daily: 20, cooldown: 5 });
   const [on, setOn] = useState<Record<string, boolean>>({ position: false, stopLoss: false, daily: false, cooldown: false });
   const [result, setResult] = useState<CounterfactualResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [stale, setStale] = useState(false);
 
   const anyOn = Object.values(on).some(Boolean);
 
   const run = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setStale(false);
     try {
       const res = await runCounterfactual(sessionId, {
         max_position_pct: on.position ? vals.position : null,
@@ -60,7 +74,7 @@ export default function Counterfactual({ sessionId }: Props) {
                   <p className="text-[10px] text-[#2a3040] mt-0.5">{c.desc}</p>
                 </div>
                 <button
-                  onClick={() => setOn(p => ({ ...p, [c.key]: !p[c.key] }))}
+                  onClick={() => { setOn(p => ({ ...p, [c.key]: !p[c.key] })); if (result) setStale(true); }}
                   className={`toggle-track ${on[c.key] ? 'active' : ''}`}
                 >
                   <div className="toggle-thumb" />
@@ -69,7 +83,7 @@ export default function Counterfactual({ sessionId }: Props) {
               <div className="flex items-center gap-3">
                 <input
                   type="range" min={c.min} max={c.max} step={c.step} value={vals[c.key]}
-                  onChange={e => setVals(p => ({ ...p, [c.key]: Number(e.target.value) }))}
+                  onChange={e => { setVals(p => ({ ...p, [c.key]: Number(e.target.value) })); if (result) setStale(true); }}
                   disabled={!on[c.key]} className="flex-1"
                 />
                 <span className={`mono text-[11px] w-14 text-right ${on[c.key] ? 'text-[#8a90a0]' : 'text-[#2a3040]'}`}>
@@ -97,6 +111,12 @@ export default function Counterfactual({ sessionId }: Props) {
       {/* Results */}
       {result && (
         <>
+          {stale && (
+            <div className="px-4 py-2.5 rounded-lg border border-amber-500/15 bg-amber-500/[0.04]">
+              <p className="text-[11px] text-amber-400/80">Constraints changed since last run. Click <strong>Run Simulation</strong> to update results.</p>
+            </div>
+          )}
+
           {/* Summary */}
           <div className="card p-4 border-blue-500/8">
             <p className="text-[13px] text-[#c9cdd5] leading-relaxed">{result.summary}</p>
@@ -115,10 +135,10 @@ export default function Counterfactual({ sessionId }: Props) {
                 <div key={k} className="bg-[#0a0d16] px-3.5 py-3">
                   <p className="data-label mb-1">{METRIC_NAMES[k] || k.replace(/_/g, ' ')}</p>
                   <div className="flex items-baseline gap-1">
-                    <span className="mono text-[11px] text-[#4a5068]">{typeof orig === 'number' ? orig.toFixed(1) : orig}</span>
+                    <span className="mono text-[11px] text-[#4a5068]">{typeof orig === 'number' ? fmtMetric(k, orig) : orig}</span>
                     <span className="text-[#2a3040]">→</span>
                     <span className={`mono text-[12px] font-semibold ${good ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {typeof sim === 'number' ? sim.toFixed(1) : sim}
+                      {typeof sim === 'number' ? fmtMetric(k, sim) : sim}
                     </span>
                   </div>
                   <p className={`mono text-[9px] mt-0.5 ${good ? 'text-emerald-400/60' : 'text-red-400/60'}`}>

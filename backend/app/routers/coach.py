@@ -51,6 +51,11 @@ async def get_coaching(
             "band": _band(bias.anchoring_score),
             "details": bias.anchoring_details or {},
         },
+        "overconfidence": {
+            "score": bias.overconfidence_score,
+            "band": _band(bias.overconfidence_score),
+            "details": bias.overconfidence_details or {},
+        },
         "archetype": {
             "label": bias.archetype,
             "details": bias.archetype_details or {},

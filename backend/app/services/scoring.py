@@ -7,6 +7,7 @@ from app.services.bias_detector import (
     detect_overtrading,
     detect_revenge_trading,
     detect_anchoring,
+    detect_overconfidence,
 )
 from app.services.features import (
     build_equity_curve,
@@ -17,6 +18,7 @@ from app.services.features import (
     compute_trade_features,
 )
 from app.services.archetypes import classify_archetype
+from app.services.temporal import rolling_bias_timeline
 from app.utils import score_to_band
 
 
@@ -36,6 +38,7 @@ def run_full_analysis(df: pd.DataFrame) -> dict:
     la_score, la_details = detect_loss_aversion(df)
     rt_score, rt_details = detect_revenge_trading(df)
     an_score, an_details = detect_anchoring(df)
+    oc_score, oc_details = detect_overconfidence(df)
 
     # 4. Archetype classification (with bias scores)
     archetype_label, archetype_details = classify_archetype(
@@ -46,7 +49,10 @@ def run_full_analysis(df: pd.DataFrame) -> dict:
         anchoring_score=an_score,
     )
 
-    # 5. Visualisation data
+    # 5. Temporal bias evolution
+    bias_timeline = rolling_bias_timeline(df)
+
+    # 6. Visualisation data
     equity_curve = build_equity_curve(df)
     trade_freq = build_trade_frequency(df)
     holding_cmp = build_holding_time_comparison(df)
@@ -74,10 +80,16 @@ def run_full_analysis(df: pd.DataFrame) -> dict:
             "band": score_to_band(an_score),
             "details": an_details,
         },
+        "overconfidence": {
+            "score": oc_score,
+            "band": score_to_band(oc_score),
+            "details": oc_details,
+        },
         "archetype": {
             "label": archetype_label,
             "details": archetype_details,
         },
+        "bias_timeline": bias_timeline,
         "equity_curve": equity_curve,
         "trade_frequency": trade_freq,
         "holding_time_comparison": holding_cmp,

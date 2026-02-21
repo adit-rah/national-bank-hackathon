@@ -344,20 +344,20 @@ def detect_anchoring(df: pd.DataFrame) -> tuple[float, dict]:
     df_copy = df.copy()
     df_copy["exit_entry_ratio"] = abs(df_copy["exit_price"] / df_copy["entry_price"] - 1)
 
-    # Count trades exited within 1% of entry price
-    anchored_exits = (df_copy["exit_entry_ratio"] < 0.01).sum()
+    # Count trades exited within 0.2% of entry price
+    anchored_exits = (df_copy["exit_entry_ratio"] < 0.002).sum()
     anchor_rate = anchored_exits / len(df_copy) * 100
     details["anchor_exit_rate_pct"] = round(float(anchor_rate), 2)
 
-    anchor_score = clamp(anchor_rate * 5, 0, 100)  # 20%+ anchored exits = high score
+    anchor_score = clamp(anchor_rate * 1.5, 0, 100)
 
     # 2. Profit/loss clustering around zero (reluctance to take small losses/gains)
     pnl_median = abs(df["profit_loss"]).median()
     if pnl_median > 0:
-        pnl_near_zero = (abs(df["profit_loss"]) < pnl_median * 0.1).sum()
+        pnl_near_zero = (abs(df["profit_loss"]) < pnl_median * 0.05).sum()
         zero_cluster_rate = pnl_near_zero / len(df) * 100
         details["pnl_near_zero_pct"] = round(float(zero_cluster_rate), 2)
-        cluster_score = clamp(zero_cluster_rate * 3, 0, 100)
+        cluster_score = clamp(zero_cluster_rate * 1.5, 0, 100)
     else:
         details["pnl_near_zero_pct"] = 0.0
         cluster_score = 0
@@ -368,7 +368,7 @@ def detect_anchoring(df: pd.DataFrame) -> tuple[float, dict]:
         round_number_exits = (exit_decimals < 0.01).sum()
         round_number_rate = round_number_exits / len(df) * 100
         details["round_number_exit_rate_pct"] = round(float(round_number_rate), 2)
-        round_score = clamp(round_number_rate * 2, 0, 100)
+        round_score = clamp(round_number_rate * 1, 0, 100)
     else:
         round_score = 0
 
@@ -377,5 +377,134 @@ def detect_anchoring(df: pd.DataFrame) -> tuple[float, dict]:
         "anchor_exit": round(anchor_score, 1),
         "zero_clustering": round(cluster_score, 1),
         "round_number": round(round_score, 1),
+    }
+    return round(clamp(composite), 1), details
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Overconfidence
+# ──────────────────────────────────────────────────────────────────────────────
+
+def detect_overconfidence(df: pd.DataFrame) -> tuple[float, dict]:
+    """Score 0-100 for overconfidence bias.
+
+    Overconfidence is the mirror of revenge trading: traders become reckless
+    after wins rather than losses, escalating risk during hot streaks.
+
+    Key signals:
+    - Position size increase after wins
+    - Frequency acceleration during win streaks
+    - Concentration creep (less diversification after wins)
+    - Streak overextension (bigger eventual loss after long win streaks)
+    """
+    details: dict = {}
+
+    if len(df) < 10:
+        return 0.0, {"reason": "insufficient_data"}
+
+    # ── 1. Post-win size escalation ──
+    after_win = df[df["after_win"]] if "after_win" in df.columns else pd.DataFrame()
+    after_loss = df[df["after_loss"]] if "after_loss" in df.columns else pd.DataFrame()
+
+    avg_size_after_win = after_win["notional"].abs().mean() if len(after_win) else 0
+    avg_size_after_loss = after_loss["notional"].abs().mean() if len(after_loss) else 1
+
+    if avg_size_after_loss > 0 and avg_size_after_win > 0:
+        win_escalation = avg_size_after_win / avg_size_after_loss
+    else:
+        win_escalation = 1.0
+
+    details["post_win_size_ratio"] = round(float(win_escalation), 3)
+    escalation_score = _sigmoid(win_escalation - 1, midpoint=0.1, steepness=20)
+
+    # ── 2. Win-streak frequency acceleration ──
+    if "streak_index" in df.columns and "time_since_last" in df.columns:
+        win_streak_mask = df["streak_index"] >= 2
+        normal_mask = (df["streak_index"].abs() <= 1) & (df["time_since_last"] > 0)
+
+        streak_cooldown = df.loc[win_streak_mask, "time_since_last"].mean() if win_streak_mask.sum() > 3 else 0
+        normal_cooldown = df.loc[normal_mask, "time_since_last"].mean() if normal_mask.sum() > 3 else 1
+
+        if normal_cooldown > 0 and streak_cooldown > 0:
+            freq_ratio = streak_cooldown / normal_cooldown
+            # Lower ratio = faster trading during win streaks
+            freq_accel_score = _sigmoid(1 - freq_ratio, midpoint=0.05, steepness=30)
+            details["win_streak_cooldown_ratio"] = round(float(freq_ratio), 4)
+        else:
+            freq_accel_score = 0
+            details["win_streak_cooldown_ratio"] = None
+    else:
+        freq_accel_score = 0
+
+    # ── 3. Concentration creep (fewer unique assets during win streaks) ──
+    if "asset" in df.columns and "streak_index" in df.columns:
+        win_streak_mask = df["streak_index"] >= 2
+        normal_mask = df["streak_index"].abs() <= 1
+
+        streak_assets = df.loc[win_streak_mask, "asset"].nunique() if win_streak_mask.sum() > 3 else 0
+        normal_assets = df.loc[normal_mask, "asset"].nunique() if normal_mask.sum() > 3 else 0
+
+        if normal_assets > 1 and streak_assets > 0:
+            diversity_ratio = streak_assets / normal_assets
+            # Lower ratio = more concentrated during streaks
+            concentration_score = _sigmoid(1 - diversity_ratio, midpoint=0.1, steepness=10)
+            details["diversity_ratio_streak_vs_normal"] = round(float(diversity_ratio), 3)
+        else:
+            concentration_score = 0
+            details["diversity_ratio_streak_vs_normal"] = None
+    else:
+        concentration_score = 0
+
+    # ── 4. Streak overextension (larger loss after long win streaks) ──
+    if "streak_index" in df.columns:
+        # Find trades immediately after a win streak of 3+ ends
+        streak_end = (df["streak_index"].shift(1) >= 3) & (~df["is_win"])
+        if streak_end.sum() > 2:
+            loss_after_streak = df.loc[streak_end, "profit_loss"].abs().mean()
+            avg_loss = df.loc[~df["is_win"], "profit_loss"].abs().mean()
+
+            if avg_loss > 0:
+                overextension = loss_after_streak / avg_loss
+                details["streak_end_loss_ratio"] = round(float(overextension), 3)
+                overextension_score = _sigmoid(overextension - 1, midpoint=0.2, steepness=8)
+            else:
+                overextension_score = 0
+        else:
+            overextension_score = 0
+            details["streak_end_loss_ratio"] = None
+    else:
+        overextension_score = 0
+
+    # ── 5. Risk tolerance drift (larger positions when in profit) ──
+    if "drawdown" in df.columns and "position_size_pct" in df.columns:
+        in_profit = df["drawdown"] > -2  # near equity highs
+        in_drawdown = df["drawdown"] < -5
+
+        size_in_profit = df.loc[in_profit, "position_size_pct"].mean() if in_profit.sum() > 3 else 0
+        size_in_drawdown = df.loc[in_drawdown, "position_size_pct"].mean() if in_drawdown.sum() > 3 else 0
+
+        if size_in_drawdown > 0 and size_in_profit > 0:
+            risk_drift = size_in_profit / size_in_drawdown
+            details["risk_drift_ratio"] = round(float(risk_drift), 3)
+            drift_score = _sigmoid(risk_drift - 1, midpoint=0.15, steepness=12)
+        else:
+            drift_score = 0
+            details["risk_drift_ratio"] = None
+    else:
+        drift_score = 0
+
+    composite = (
+        0.25 * escalation_score
+        + 0.25 * freq_accel_score
+        + 0.15 * concentration_score
+        + 0.20 * overextension_score
+        + 0.15 * drift_score
+    )
+    details["sub_scores"] = {
+        "post_win_escalation": round(escalation_score, 1),
+        "win_streak_acceleration": round(freq_accel_score, 1),
+        "concentration_creep": round(concentration_score, 1),
+        "streak_overextension": round(overextension_score, 1),
+        "risk_tolerance_drift": round(drift_score, 1),
     }
     return round(clamp(composite), 1), details

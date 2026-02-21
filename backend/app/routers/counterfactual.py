@@ -1,26 +1,32 @@
 """Counterfactual simulation router."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import pandas as pd
 
 from app.database import get_db
 from app.models import AnalysisSession, Trade
-from app.schemas import CounterfactualRequest
+from app.schemas import CounterfactualRequest, CounterfactualResponse
 from app.services.features import compute_trade_features
 from app.services.counterfactual import simulate
-import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.post("/counterfactual/{session_id}")
+@router.post("/counterfactual/{session_id}", response_model=CounterfactualResponse)
 async def run_counterfactual(
     session_id: str,
     params: CounterfactualRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """Run a counterfactual simulation on a session's trades."""
+    logger.info("Counterfactual request | session=%s params=%s", session_id, params.model_dump())
+
     # Verify session
     sess_result = await db.execute(
         select(AnalysisSession).where(AnalysisSession.id == session_id)
@@ -53,6 +59,7 @@ async def run_counterfactual(
     ]
     df = pd.DataFrame(records)
     df = compute_trade_features(df)
+    logger.info("Loaded %d trades for session %s", len(df), session_id)
 
     sim_result = simulate(
         df,

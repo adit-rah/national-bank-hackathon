@@ -5,6 +5,8 @@ import Heatmap from './Heatmap';
 import HoldingTime from './HoldingTime';
 import PositionScatter from './PositionScatter';
 import BiasRadar from './BiasRadar';
+import BiasEvolution from './BiasEvolution';
+import BiasHeatmapTimeline from './BiasHeatmapTimeline';
 import ArchetypeBadge from './ArchetypeBadge';
 import Counterfactual from './Counterfactual';
 import CoachPanel from './CoachPanel';
@@ -76,34 +78,41 @@ export default function Dashboard({ result }: Props) {
         ))}
       </div>
 
-      {/* ─── Tab content ────────────────────────────────── */}
-      {activeTab === 'overview' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2">
-              <BiasRadar
-                overtrading={result.overtrading}
-                lossAversion={result.loss_aversion}
-                revengeTrading={result.revenge_trading}
-                anchoring={result.anchoring}
-              />
+      {/* Tab content */}
+      <div className="animate-fade-in">
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <BiasRadar
+                  overtrading={result.overtrading}
+                  lossAversion={result.loss_aversion}
+                  revengeTrading={result.revenge_trading}
+                  anchoring={result.anchoring}
+                  overconfidence={result.overconfidence}
+                />
+              </div>
+              <ArchetypeBadge archetype={result.archetype} />
             </div>
-            <ArchetypeBadge archetype={result.archetype} />
+
+            <BiasEvolution data={result.bias_timeline} />
+
+            <BiasHeatmapTimeline data={result.bias_timeline} />
+
+            <EquityCurve data={result.equity_curve} biasTimeline={result.bias_timeline} />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Heatmap data={result.trade_frequency} />
+              <HoldingTime data={result.holding_time_comparison} />
+            </div>
+
+            <PositionScatter data={result.position_scatter} />
           </div>
+        )}
 
-          <EquityCurve data={result.equity_curve} />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Heatmap data={result.trade_frequency} />
-            <HoldingTime data={result.holding_time_comparison} />
-          </div>
-
-          <PositionScatter data={result.position_scatter} />
-        </div>
-      )}
-
-      {activeTab === 'simulator' && <Counterfactual sessionId={result.session_id} />}
-      {activeTab === 'coach' && <CoachPanel sessionId={result.session_id} />}
+        {activeTab === 'simulator' && <Counterfactual sessionId={result.session_id} />}
+        {activeTab === 'coach' && <CoachPanel sessionId={result.session_id} />}
+      </div>
     </div>
   );
 }
