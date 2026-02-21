@@ -28,26 +28,43 @@ DETECTORS = {
 }
 
 MIN_TRADES_PER_WINDOW = 15
+TARGET_POINTS = 60
 
 
 def _adaptive_window_params(duration_secs: float) -> tuple[float, float]:
-    """Return (window_size_secs, step_size_secs) adapted to session length."""
-    window = duration_secs * 0.20
-    window = max(window, 3600)       # floor: 1 hour
-    window = min(window, 8 * 3600)   # cap: 8 hours
+    """Return (window_size_secs, step_size_secs) adapted to session length.
 
-    step = duration_secs * 0.05
-    step = max(step, 900)            # floor: 15 minutes
-    step = min(step, 2 * 3600)       # cap: 2 hours
+    Targets ~TARGET_POINTS output points regardless of session length.
+    Window is 4x the step for overlapping coverage and stable scores.
+    """
+    step = duration_secs / TARGET_POINTS
+    step = max(step, 900)  # floor: 15 min (short sessions)
+
+    window = step * 4
+    window = max(window, 3600)  # floor: 1 hour
 
     return window, step
+
+
+def _ema_smooth(timeline: list[dict], alpha: float = 0.3) -> list[dict]:
+    """Apply exponential moving average to bias scores for visual smoothness."""
+    if len(timeline) < 2:
+        return timeline
+
+    prev = {name: timeline[0][name] for name in BIAS_NAMES}
+    for point in timeline:
+        for name in BIAS_NAMES:
+            prev[name] = alpha * point[name] + (1 - alpha) * prev[name]
+            point[name] = round(prev[name], 1)
+    return timeline
 
 
 def rolling_bias_timeline(df: pd.DataFrame) -> list[dict]:
     """Slide a time window across the session and score biases per window.
 
     Returns a list of dicts, each representing one time-window snapshot
-    with scores for all 5 biases.
+    with scores for all 5 biases.  Output is EMA-smoothed for cleaner
+    visualisation.
     """
     if len(df) < MIN_TRADES_PER_WINDOW:
         return []
@@ -96,4 +113,4 @@ def rolling_bias_timeline(df: pd.DataFrame) -> list[dict]:
 
         cursor += step_td
 
-    return timeline
+    return _ema_smooth(timeline)

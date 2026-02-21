@@ -67,6 +67,8 @@ async def run_counterfactual(
         stop_loss_pct=params.stop_loss_pct,
         max_daily_trades=params.max_daily_trades,
         cooldown_minutes=params.cooldown_minutes,
+        max_loss_streak=params.max_loss_streak,
+        max_drawdown_trigger_pct=params.max_drawdown_trigger_pct,
     )
 
     return {

@@ -72,8 +72,8 @@ def detect_overtrading(df: pd.DataFrame) -> tuple[float, dict]:
     # ── 3. Trade clustering density ──
     if "trades_1h" in df.columns:
         cluster_density = df["trades_1h"].mean()
-        # sigmoid: density of 30 → ~20, 60 → ~50, 200+ → ~90
-        cluster_score = _sigmoid(cluster_density, midpoint=60, steepness=0.03)
+        # sigmoid: density of 300 → ~29, 450 → ~50, 700+ → ~82
+        cluster_score = _sigmoid(cluster_density, midpoint=450, steepness=0.006)
         details["avg_cluster_density_1h"] = round(float(cluster_density), 2)
     else:
         cluster_score = 0
@@ -176,15 +176,15 @@ def detect_loss_aversion(df: pd.DataFrame) -> tuple[float, dict]:
         skew_ratio = 1.0
 
     details["loss_mean_median_ratio"] = round(float(skew_ratio), 3)
-    # Ratio 1.0 → ~5, 2.0 → ~50, 5+ → ~90
-    skew_score = _sigmoid(skew_ratio - 1, midpoint=1.0, steepness=2.5)
+    # Ratio 2 → ~12, 4 → ~50, 8+ → ~99
+    skew_score = _sigmoid(skew_ratio - 1, midpoint=3.0, steepness=1.0)
 
     # ── 4. Win rate paradox (high win rate + poor risk/reward = aversion) ──
     win_rate = len(wins) / len(df)
     expectancy = df["profit_loss"].mean()
     # If win rate is high but expectancy is low/negative, strong aversion signal
-    if win_rate > 0.55 and magnitude_ratio > 1.5:
-        paradox_score = _sigmoid(win_rate * magnitude_ratio, midpoint=1.5, steepness=2)
+    if win_rate > 0.45 and magnitude_ratio > 2.0:
+        paradox_score = _sigmoid(win_rate * magnitude_ratio, midpoint=1.2, steepness=2.5)
     else:
         paradox_score = 0
     details["win_rate"] = round(float(win_rate * 100), 1)
@@ -250,18 +250,18 @@ def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
     details["deterioration_pval"] = round(float(p_val), 6)
 
     # Only score if p < 0.2 AND spread is in the right direction (worse after loss)
-    if pnl_deterioration > 0 and p_val < 0.2:
-        deterioration_score = _sigmoid(pnl_deterioration, midpoint=0.04, steepness=60)
+    if pnl_deterioration > 0 and p_val < 0.05:
+        deterioration_score = _sigmoid(pnl_deterioration, midpoint=0.08, steepness=30)
     else:
-        deterioration_score = _sigmoid(max(pnl_deterioration, 0), midpoint=0.08, steepness=40)
+        deterioration_score = _sigmoid(max(pnl_deterioration, 0), midpoint=0.12, steepness=20)
 
     # ── 2. Negative post-loss expectancy ──
     # (Does the trader consistently LOSE money after losses?
     #  A strongly negative avg PnL after loss = emotional decisions.)
     avg_loss_pct = avg_pnl_after_loss / pnl_scale if pnl_scale > 0 else 0
     details["post_loss_expectancy_norm"] = round(float(avg_loss_pct), 4)
-    # sigmoid: 0 → ~5, -0.02 → ~30, -0.04+ → ~70
-    expectancy_score = _sigmoid(-avg_loss_pct, midpoint=0.02, steepness=80) if avg_pnl_after_loss < 0 else 0
+    # sigmoid: 0 → ~18, -0.10 → ~50, -0.20+ → ~82
+    expectancy_score = _sigmoid(-avg_loss_pct, midpoint=0.10, steepness=15) if avg_pnl_after_loss < 0 else 0
 
     # ── 3. Loss escalation during streaks ──
     streak_mask = df["streak_index"] <= -2
@@ -278,8 +278,8 @@ def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
         details["loss_escalation_ratio"] = round(float(escalation), 3)
         details["first_loss_avg"] = round(float(first_loss_avg), 2)
         details["second_loss_avg"] = round(float(second_loss_avg), 2)
-        # sigmoid: 1.0 → ~5, 1.04 → ~50, 1.10+ → ~85
-        escalation_score = _sigmoid(escalation - 1, midpoint=0.04, steepness=60)
+        # sigmoid: 1.0 → ~8, 1.12 → ~50, 1.25+ → ~84
+        escalation_score = _sigmoid(escalation - 1, midpoint=0.12, steepness=20)
     else:
         escalation_score = 0
         details["loss_escalation_ratio"] = None
@@ -293,8 +293,8 @@ def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
         vol_ratio = 1.0
 
     details["pnl_volatility_ratio"] = round(float(vol_ratio), 3)
-    # sigmoid: 1.0 → ~5, 1.02 → ~50, 1.06+ → ~85
-    vol_score = _sigmoid(vol_ratio - 1, midpoint=0.02, steepness=100)
+    # sigmoid: 1.0 → ~12, 1.08 → ~50, 1.17+ → ~90
+    vol_score = _sigmoid(vol_ratio - 1, midpoint=0.08, steepness=25)
 
     # ── 5. Position size aggression after losses (original signal, kept) ──
     avg_size_after_loss = after_loss["notional"].abs().mean() if len(after_loss) else 0
@@ -344,12 +344,12 @@ def detect_anchoring(df: pd.DataFrame) -> tuple[float, dict]:
     df_copy = df.copy()
     df_copy["exit_entry_ratio"] = abs(df_copy["exit_price"] / df_copy["entry_price"] - 1)
 
-    # Count trades exited within 0.2% of entry price
-    anchored_exits = (df_copy["exit_entry_ratio"] < 0.002).sum()
+    # Count trades exited within 0.1% of entry price
+    anchored_exits = (df_copy["exit_entry_ratio"] < 0.001).sum()
     anchor_rate = anchored_exits / len(df_copy) * 100
     details["anchor_exit_rate_pct"] = round(float(anchor_rate), 2)
 
-    anchor_score = clamp(anchor_rate * 1.5, 0, 100)
+    anchor_score = clamp(anchor_rate * 2.5, 0, 100)
 
     # 2. Profit/loss clustering around zero (reluctance to take small losses/gains)
     pnl_median = abs(df["profit_loss"]).median()
@@ -357,7 +357,7 @@ def detect_anchoring(df: pd.DataFrame) -> tuple[float, dict]:
         pnl_near_zero = (abs(df["profit_loss"]) < pnl_median * 0.05).sum()
         zero_cluster_rate = pnl_near_zero / len(df) * 100
         details["pnl_near_zero_pct"] = round(float(zero_cluster_rate), 2)
-        cluster_score = clamp(zero_cluster_rate * 1.5, 0, 100)
+        cluster_score = clamp(zero_cluster_rate * 2.0, 0, 100)
     else:
         details["pnl_near_zero_pct"] = 0.0
         cluster_score = 0
@@ -477,8 +477,8 @@ def detect_overconfidence(df: pd.DataFrame) -> tuple[float, dict]:
 
     # ── 5. Risk tolerance drift (larger positions when in profit) ──
     if "drawdown" in df.columns and "position_size_pct" in df.columns:
-        in_profit = df["drawdown"] > -2  # near equity highs
-        in_drawdown = df["drawdown"] < -5
+        in_profit = df["drawdown"] > -10
+        in_drawdown = df["drawdown"] < -30
 
         size_in_profit = df.loc[in_profit, "position_size_pct"].mean() if in_profit.sum() > 3 else 0
         size_in_drawdown = df.loc[in_drawdown, "position_size_pct"].mean() if in_drawdown.sum() > 3 else 0

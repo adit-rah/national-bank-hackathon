@@ -146,8 +146,19 @@ def build_holding_time_comparison(df: pd.DataFrame) -> dict:
 
 
 def build_position_scatter(df: pd.DataFrame) -> list[dict]:
-    """Position size vs PnL scatter data."""
-    sample = df.sample(min(len(df), 1000), random_state=42) if len(df) > 1000 else df
+    """Position size vs PnL scatter data, with outliers clipped at 1st/99th percentile."""
+    sample = df.sample(min(len(df), 1000), random_state=42) if len(df) > 1000 else df.copy()
+
+    pnl = sample["profit_loss"]
+    size = sample["position_size_pct"] if "position_size_pct" in sample.columns else pd.Series(0, index=sample.index)
+
+    pnl_lo, pnl_hi = float(pnl.quantile(0.01)), float(pnl.quantile(0.99))
+    size_lo, size_hi = float(size.quantile(0.01)), float(size.quantile(0.99))
+
+    sample = sample[
+        pnl.between(pnl_lo, pnl_hi) & size.between(size_lo, size_hi)
+    ]
+
     return [
         {
             "position_size": round(float(row.get("position_size_pct", 0)), 2),
