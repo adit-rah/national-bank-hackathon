@@ -208,21 +208,95 @@ def detect_loss_aversion(df: pd.DataFrame) -> tuple[float, dict]:
 def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
     """Score 0-100 for revenge trading.
 
-    Key signals:
-    - Position size increase after losses
-    - Risk escalation during loss streaks
-    - Reduced cooldown period after losses
-    - Increasing loss magnitude during streaks (doubling down)
+    Revenge trading is about *worse decision-making after losses* — not just
+    bigger positions.  Key signals:
+    - Performance deterioration after losses (avg PnL drops)
+    - Sharpe ratio collapse after losses vs after wins
+    - Loss escalation during streaks (losses get bigger)
+    - PnL volatility increase after losses (erratic outcomes)
+    - Position size aggression after losses
     """
     details: dict = {}
 
     if len(df) < 10:
         return 0.0, {"reason": "insufficient_data"}
 
-    # ── 1. Post-loss aggression index ──
     after_loss = df[df["after_loss"]]
     after_win = df[~df["after_loss"]]
 
+    if len(after_loss) < 5 or len(after_win) < 5:
+        return 0.0, {"reason": "insufficient_post_loss_data"}
+
+    # ── 1. Post-loss performance deterioration ──
+    # (Does the trader perform significantly WORSE after a loss?)
+    avg_pnl_after_loss = after_loss["profit_loss"].mean()
+    avg_pnl_after_win = after_win["profit_loss"].mean()
+
+    pnl_spread = avg_pnl_after_win - avg_pnl_after_loss
+    pnl_scale = df["profit_loss"].std() if df["profit_loss"].std() > 0 else 1
+    pnl_deterioration = pnl_spread / pnl_scale
+
+    details["avg_pnl_after_loss"] = round(float(avg_pnl_after_loss), 2)
+    details["avg_pnl_after_win"] = round(float(avg_pnl_after_win), 2)
+    details["pnl_deterioration"] = round(float(pnl_deterioration), 4)
+
+    # Use a t-test to check if the deterioration is statistically significant
+    t_stat, p_val = stats.ttest_ind(
+        after_loss["profit_loss"].values,
+        after_win["profit_loss"].values,
+        equal_var=False,
+    )
+    p_val = p_val if not np.isnan(p_val) else 1.0
+    details["deterioration_pval"] = round(float(p_val), 6)
+
+    # Only score if p < 0.2 AND spread is in the right direction (worse after loss)
+    if pnl_deterioration > 0 and p_val < 0.2:
+        deterioration_score = _sigmoid(pnl_deterioration, midpoint=0.04, steepness=60)
+    else:
+        deterioration_score = _sigmoid(max(pnl_deterioration, 0), midpoint=0.08, steepness=40)
+
+    # ── 2. Negative post-loss expectancy ──
+    # (Does the trader consistently LOSE money after losses?
+    #  A strongly negative avg PnL after loss = emotional decisions.)
+    avg_loss_pct = avg_pnl_after_loss / pnl_scale if pnl_scale > 0 else 0
+    details["post_loss_expectancy_norm"] = round(float(avg_loss_pct), 4)
+    # sigmoid: 0 → ~5, -0.02 → ~30, -0.04+ → ~70
+    expectancy_score = _sigmoid(-avg_loss_pct, midpoint=0.02, steepness=80) if avg_pnl_after_loss < 0 else 0
+
+    # ── 3. Loss escalation during streaks ──
+    streak_mask = df["streak_index"] <= -2
+    if streak_mask.sum() > 3:
+        first_loss_avg = df[df["streak_index"] == -1]["profit_loss"].abs().mean()
+        second_loss_avg = df[df["streak_index"] == -2]["profit_loss"].abs().mean()
+        deep_loss_avg = df[df["streak_index"] <= -3]["profit_loss"].abs().mean() if (df["streak_index"] <= -3).sum() > 3 else second_loss_avg
+
+        if first_loss_avg > 0:
+            escalation = second_loss_avg / first_loss_avg
+        else:
+            escalation = 1.0
+
+        details["loss_escalation_ratio"] = round(float(escalation), 3)
+        details["first_loss_avg"] = round(float(first_loss_avg), 2)
+        details["second_loss_avg"] = round(float(second_loss_avg), 2)
+        # sigmoid: 1.0 → ~5, 1.04 → ~50, 1.10+ → ~85
+        escalation_score = _sigmoid(escalation - 1, midpoint=0.04, steepness=60)
+    else:
+        escalation_score = 0
+        details["loss_escalation_ratio"] = None
+
+    # ── 4. PnL volatility increase after losses ──
+    pnl_vol_after_loss = after_loss["profit_loss"].std()
+    pnl_vol_after_win = after_win["profit_loss"].std()
+    if pnl_vol_after_win > 0:
+        vol_ratio = pnl_vol_after_loss / pnl_vol_after_win
+    else:
+        vol_ratio = 1.0
+
+    details["pnl_volatility_ratio"] = round(float(vol_ratio), 3)
+    # sigmoid: 1.0 → ~5, 1.02 → ~50, 1.06+ → ~85
+    vol_score = _sigmoid(vol_ratio - 1, midpoint=0.02, steepness=100)
+
+    # ── 5. Position size aggression after losses (original signal, kept) ──
     avg_size_after_loss = after_loss["notional"].abs().mean() if len(after_loss) else 0
     avg_size_after_win = after_win["notional"].abs().mean() if len(after_win) else 1
 
@@ -232,83 +306,21 @@ def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
         aggression_index = 1.0
 
     details["post_loss_aggression_index"] = round(float(aggression_index), 3)
-    # Ratio 1.0 → ~5, 1.2 → ~50, 1.5+ → ~85+
     aggr_score = _sigmoid(aggression_index - 1, midpoint=0.15, steepness=20)
 
-    # ── 2. Risk escalation during loss streaks ──
-    streak_mask = df["streak_index"] <= -2
-    if streak_mask.sum() > 3:
-        streak_trades = df[streak_mask]
-        normal_trades = df[~streak_mask & ~df["after_loss"]]
-        avg_risk_streak = streak_trades["notional"].abs().mean() if len(streak_trades) else 0
-        avg_risk_normal = normal_trades["notional"].abs().mean() if len(normal_trades) else 1
-
-        if avg_risk_normal > 0:
-            risk_spike = avg_risk_streak / avg_risk_normal
-        else:
-            risk_spike = 1.0
-
-        details["risk_spike_during_streak"] = round(float(risk_spike), 3)
-        spike_score = _sigmoid(risk_spike - 1, midpoint=0.1, steepness=20)
-    else:
-        spike_score = 0
-        details["risk_spike_during_streak"] = None
-
-    # ── 3. Reduced cooldown after loss ──
-    if "time_since_last" in df.columns:
-        cooldown_after_loss = after_loss["time_since_last"].mean() if len(after_loss) else 0
-        cooldown_after_win = after_win["time_since_last"].mean() if len(after_win) else 1
-
-        if cooldown_after_win > 0 and cooldown_after_loss > 0:
-            cooldown_ratio = cooldown_after_loss / cooldown_after_win
-            details["cooldown_ratio"] = round(float(cooldown_ratio), 4)
-            # Inverted: lower ratio = less cooldown = more revenge
-            cool_score = _sigmoid(1 - cooldown_ratio, midpoint=0.05, steepness=30)
-        else:
-            cool_score = 0
-            details["cooldown_ratio"] = None
-    else:
-        cool_score = 0
-
-    # ── 4. Loss magnitude escalation during streaks ──
-    # (Do losses get BIGGER during a streak? = doubling down / revenge)
-    if streak_mask.sum() > 3:
-        first_loss = df[df["streak_index"] == -1]["profit_loss"].abs().mean()
-        deep_loss = df[df["streak_index"] <= -3]["profit_loss"].abs().mean() if (df["streak_index"] <= -3).sum() > 3 else first_loss
-
-        if first_loss > 0:
-            escalation = deep_loss / first_loss
-        else:
-            escalation = 1.0
-
-        details["loss_escalation_ratio"] = round(float(escalation), 3)
-        escalation_score = _sigmoid(escalation - 1, midpoint=0.1, steepness=15)
-    else:
-        escalation_score = 0
-        details["loss_escalation_ratio"] = None
-
-    # ── 5. Position size variability (erratic = emotional) ──
-    if "notional" in df.columns:
-        cv = df["notional"].std() / df["notional"].abs().mean() if df["notional"].abs().mean() > 0 else 0
-        # CV ~2.5 is normal for random trading; 4+ is erratic
-        variability_score = _sigmoid(float(cv), midpoint=3.5, steepness=2.5)
-        details["position_size_cv"] = round(float(cv), 3)
-    else:
-        variability_score = 0
-
     composite = (
-        0.25 * aggr_score
-        + 0.25 * spike_score
-        + 0.15 * cool_score
-        + 0.20 * escalation_score
-        + 0.15 * variability_score
+        0.20 * deterioration_score
+        + 0.20 * expectancy_score
+        + 0.25 * escalation_score
+        + 0.20 * vol_score
+        + 0.15 * aggr_score
     )
     details["sub_scores"] = {
-        "aggression_index": round(aggr_score, 1),
-        "risk_spike": round(spike_score, 1),
-        "cooldown_reduction": round(cool_score, 1),
+        "performance_deterioration": round(deterioration_score, 1),
+        "negative_expectancy": round(expectancy_score, 1),
         "loss_escalation": round(escalation_score, 1),
-        "position_variability": round(variability_score, 1),
+        "volatility_increase": round(vol_score, 1),
+        "aggression_index": round(aggr_score, 1),
     }
     return round(clamp(composite), 1), details
 
