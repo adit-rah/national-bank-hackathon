@@ -59,12 +59,14 @@ class BiasResult(Base):
     loss_aversion_score = Column(Float, default=0.0)
     revenge_trading_score = Column(Float, default=0.0)
     anchoring_score = Column(Float, default=0.0)
+    overconfidence_score = Column(Float, default=0.0)
 
     # Statistical details
     overtrading_details = Column(JSON, nullable=True)
     loss_aversion_details = Column(JSON, nullable=True)
     revenge_trading_details = Column(JSON, nullable=True)
     anchoring_details = Column(JSON, nullable=True)
+    overconfidence_details = Column(JSON, nullable=True)
 
     # Archetype
     archetype = Column(String(100), nullable=True)
@@ -72,6 +74,9 @@ class BiasResult(Base):
 
     # Feature summary
     feature_summary = Column(JSON, nullable=True)
+
+    # Temporal bias timeline
+    bias_timeline = Column(JSON, nullable=True)
 
     # Coach output
     coach_output = Column(JSON, nullable=True)

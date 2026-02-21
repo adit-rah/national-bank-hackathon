@@ -51,9 +51,10 @@ def compute_trade_features(df: pd.DataFrame) -> pd.DataFrame:
     # ── Volatility proxy (rolling std of pnl) ──────────────────────
     df["volatility_proxy"] = df["profit_loss"].rolling(window=20, min_periods=1).std().fillna(0)
 
-    # ── Post-loss indicators ───────────────────────────────────────
+    # ── Post-loss / post-win indicators ──────────────────────────
     df["prev_win"] = df["is_win"].shift(1).fillna(True).astype(bool)
     df["after_loss"] = ~df["prev_win"]
+    df["after_win"] = df["prev_win"]
 
     # Position size change after loss
     df["prev_notional"] = df["notional"].shift(1)

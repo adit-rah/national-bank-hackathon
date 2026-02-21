@@ -59,6 +59,19 @@ export interface FeatureSummary {
   duration_hours: number;
 }
 
+export interface BiasTimelinePoint {
+  timestamp: string;
+  window_start: string;
+  window_end: string;
+  trade_count: number;
+  overtrading: number;
+  loss_aversion: number;
+  revenge_trading: number;
+  anchoring: number;
+  overconfidence: number;
+  dominant_bias: string;
+}
+
 export interface AnalysisResult {
   session_id: string;
   trade_count: number;
@@ -66,8 +79,10 @@ export interface AnalysisResult {
   loss_aversion: BiasScore;
   revenge_trading: BiasScore;
   anchoring: BiasScore;
+  overconfidence: BiasScore;
   archetype: Archetype;
   feature_summary: FeatureSummary;
+  bias_timeline: BiasTimelinePoint[];
   equity_curve: EquityCurvePoint[];
   trade_frequency: TradeFrequency;
   holding_time_comparison: HoldingTimeComparison;

@@ -69,9 +69,12 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
         bias_result.revenge_trading_details = results["revenge_trading"]["details"]
         bias_result.anchoring_score = results["anchoring"]["score"]
         bias_result.anchoring_details = results["anchoring"]["details"]
+        bias_result.overconfidence_score = results["overconfidence"]["score"]
+        bias_result.overconfidence_details = results["overconfidence"]["details"]
         bias_result.archetype = results["archetype"]["label"]
         bias_result.archetype_details = results["archetype"]["details"]
         bias_result.feature_summary = results["feature_summary"]
+        bias_result.bias_timeline = results["bias_timeline"]
     else:
         bias_result = BiasResult(
             session_id=session_id,
@@ -83,9 +86,12 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
             revenge_trading_details=results["revenge_trading"]["details"],
             anchoring_score=results["anchoring"]["score"],
             anchoring_details=results["anchoring"]["details"],
+            overconfidence_score=results["overconfidence"]["score"],
+            overconfidence_details=results["overconfidence"]["details"],
             archetype=results["archetype"]["label"],
             archetype_details=results["archetype"]["details"],
             feature_summary=results["feature_summary"],
+            bias_timeline=results["bias_timeline"],
         )
         db.add(bias_result)
 
@@ -98,8 +104,10 @@ async def run_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
         "loss_aversion": results["loss_aversion"],
         "revenge_trading": results["revenge_trading"],
         "anchoring": results["anchoring"],
+        "overconfidence": results["overconfidence"],
         "archetype": results["archetype"],
         "feature_summary": results["feature_summary"],
+        "bias_timeline": results["bias_timeline"],
         "equity_curve": results["equity_curve"],
         "trade_frequency": results["trade_frequency"],
         "holding_time_comparison": results["holding_time_comparison"],
@@ -139,11 +147,17 @@ async def get_analysis(session_id: str, db: AsyncSession = Depends(get_db)):
             "band": _band(bias.anchoring_score),
             "details": bias.anchoring_details,
         },
+        "overconfidence": {
+            "score": bias.overconfidence_score,
+            "band": _band(bias.overconfidence_score),
+            "details": bias.overconfidence_details,
+        },
         "archetype": {
             "label": bias.archetype,
             "details": bias.archetype_details,
         },
         "feature_summary": bias.feature_summary,
+        "bias_timeline": bias.bias_timeline or [],
         "coach_output": bias.coach_output,
     }
 

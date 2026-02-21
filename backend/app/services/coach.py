@@ -28,6 +28,8 @@ def _build_user_prompt(analysis: dict) -> str:
     ot = analysis.get("overtrading", {})
     la = analysis.get("loss_aversion", {})
     rt = analysis.get("revenge_trading", {})
+    an = analysis.get("anchoring", {})
+    oc = analysis.get("overconfidence", {})
     arch = analysis.get("archetype", {})
     summary = analysis.get("feature_summary", {})
 
@@ -49,6 +51,10 @@ def _build_user_prompt(analysis: dict) -> str:
   Details: {json.dumps(la.get('details', {}), default=str)}
 - Revenge Trading: {rt.get('score', 'N/A')}/100 ({rt.get('band', 'N/A')})
   Details: {json.dumps(rt.get('details', {}), default=str)}
+- Anchoring: {an.get('score', 'N/A')}/100 ({an.get('band', 'N/A')})
+  Details: {json.dumps(an.get('details', {}), default=str)}
+- Overconfidence: {oc.get('score', 'N/A')}/100 ({oc.get('band', 'N/A')})
+  Details: {json.dumps(oc.get('details', {}), default=str)}
 
 ## Trader Archetype
 {arch.get('label', 'Unknown')}: {arch.get('details', {}).get('description', '')}
@@ -62,6 +68,8 @@ def _generate_fallback(analysis: dict) -> dict:
     ot = analysis.get("overtrading", {})
     la = analysis.get("loss_aversion", {})
     rt = analysis.get("revenge_trading", {})
+    an = analysis.get("anchoring", {})
+    oc = analysis.get("overconfidence", {})
     arch = analysis.get("archetype", {})
     summary = analysis.get("feature_summary", {})
 
@@ -70,6 +78,8 @@ def _generate_fallback(analysis: dict) -> dict:
         ("Overtrading", ot.get("score", 0), ot.get("details", {})),
         ("Loss Aversion", la.get("score", 0), la.get("details", {})),
         ("Revenge Trading", rt.get("score", 0), rt.get("details", {})),
+        ("Anchoring", an.get("score", 0), an.get("details", {})),
+        ("Overconfidence", oc.get("score", 0), oc.get("details", {})),
     ]
     biases.sort(key=lambda x: x[1], reverse=True)
     worst_name, worst_score, worst_details = biases[0]
@@ -105,6 +115,20 @@ def _generate_fallback(analysis: dict) -> dict:
             f"after losses. Combined with a win rate of {win_rate:.1f}% and Sharpe of {sharpe:.2f}, "
             f"this revenge pattern compounds drawdowns."
         )
+    elif worst_name == "Anchoring":
+        anchor_rate = worst_details.get("anchor_exit_rate_pct", 0)
+        feedback_parts.append(
+            f"{anchor_rate:.1f}% of your exits are within 1% of entry price, suggesting you're "
+            f"anchored to your entry point. This fixation prevents you from letting winners run "
+            f"or cutting losses decisively."
+        )
+    else:
+        size_ratio = worst_details.get("post_win_size_ratio", 1)
+        feedback_parts.append(
+            f"Your post-win position size ratio is {size_ratio:.2f}x — you increase risk after "
+            f"wins. With a Sharpe of {sharpe:.2f}, this overconfidence turns winning streaks into "
+            f"larger-than-necessary drawdowns when the streak inevitably ends."
+        )
 
     feedback_parts.append(
         f"Your trader archetype is '{arch.get('label', 'Unknown')}'. "
@@ -120,6 +144,12 @@ def _generate_fallback(analysis: dict) -> dict:
     if rt.get("score", 0) >= 30:
         discipline_plan.append("After any loss, enforce a mandatory 10-minute cooldown before your next trade.")
         discipline_plan.append("Never increase position size on the trade immediately following a loss.")
+    if an.get("score", 0) >= 30:
+        discipline_plan.append("Use take-profit and stop-loss orders set BEFORE entry — never adjust based on your entry price.")
+        discipline_plan.append("Focus on market structure for exits, not your personal breakeven point.")
+    if oc.get("score", 0) >= 30:
+        discipline_plan.append("Cap position size at your standard amount regardless of recent wins — do not scale up during hot streaks.")
+        discipline_plan.append("After 3+ consecutive wins, reduce position size by 25% for the next trade as a cooldown.")
     discipline_plan.append("Review your trading journal at end of day and score yourself on plan adherence.")
 
     checklist = [

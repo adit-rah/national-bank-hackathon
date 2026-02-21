@@ -40,8 +40,11 @@ class AnalysisResponse(BaseModel):
     overtrading: BiasScoreOut
     loss_aversion: BiasScoreOut
     revenge_trading: BiasScoreOut
+    anchoring: BiasScoreOut
+    overconfidence: BiasScoreOut
     archetype: ArchetypeOut
     feature_summary: dict
+    bias_timeline: List[dict]
     equity_curve: List[dict]
     trade_frequency: dict
     holding_time_comparison: dict
@@ -56,19 +59,17 @@ class CounterfactualRequest(BaseModel):
     cooldown_minutes: Optional[float] = None
 
 
-class MetricsComparison(BaseModel):
+class CounterfactualResponse(BaseModel):
+    session_id: str
+    params: dict
     original: dict
     simulated: dict
     improvement: dict
     summary: str
-
-
-class CounterfactualResponse(BaseModel):
-    session_id: str
-    params: dict
-    metrics: MetricsComparison
     equity_curve_original: List[dict]
     equity_curve_simulated: List[dict]
+    trades_original: int
+    trades_simulated: int
 
 
 # ─── Coach ───
