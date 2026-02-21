@@ -73,7 +73,7 @@ class CounterfactualResponse(BaseModel):
 
 # ─── Coach ───
 class CoachRequest(BaseModel):
-    provider: Optional[str] = None  # override LLM_PROVIDER: openai, anthropic, gemini, groq
+    provider: Optional[str] = None  # override LLM_PROVIDER
 
 
 class CoachResponse(BaseModel):
