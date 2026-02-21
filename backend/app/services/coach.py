@@ -1,4 +1,4 @@
-"""AI Trading Coach – tri-provider (OpenAI + Anthropic + Gemini) LLM integration."""
+"""AI Trading Coach – multi-provider (OpenAI / Anthropic / Gemini / Groq) LLM integration."""
 
 import json
 from typing import Optional
@@ -190,6 +190,7 @@ def _pick_provider(preferred: str) -> str | None:
         "openai": settings.OPENAI_API_KEY,
         "anthropic": settings.ANTHROPIC_API_KEY,
         "gemini": settings.GEMINI_API_KEY,
+        "groq": settings.GROQ_API_KEY,
     }
 
     # Try preferred first
@@ -222,7 +223,9 @@ async def generate_coaching(
     user_prompt = _build_user_prompt(analysis)
 
     try:
-        if provider == "anthropic":
+        if provider == "groq":
+            return await _call_groq(user_prompt)
+        elif provider == "anthropic":
             return await _call_anthropic(user_prompt)
         elif provider == "gemini":
             return await _call_gemini(user_prompt)
@@ -306,6 +309,34 @@ async def _call_gemini(user_prompt: str) -> dict:
     except json.JSONDecodeError:
         return {
             "provider": "gemini",
+            "feedback": content,
+            "discipline_plan": [],
+            "daily_checklist": [],
+            "journaling_prompts": [],
+        }
+
+
+async def _call_groq(user_prompt: str) -> dict:
+    """Call Groq API (Llama 3.3 70B)."""
+    from groq import AsyncGroq
+
+    client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+    response = await client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.7,
+        max_tokens=2000,
+        response_format={"type": "json_object"},
+    )
+    content = response.choices[0].message.content
+    try:
+        return {"provider": "groq", **json.loads(content)}
+    except json.JSONDecodeError:
+        return {
+            "provider": "groq",
             "feedback": content,
             "discipline_plan": [],
             "daily_checklist": [],

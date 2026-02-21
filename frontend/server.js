@@ -14,13 +14,14 @@ app.use('/api', createProxyMiddleware({
   changeOrigin: true,
   timeout: 120000,
   proxyTimeout: 120000,
+  pathRewrite: { '^/': '/api/' },
 }));
 
 // Serve static files from the build
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // SPA fallback — serve index.html for all non-API, non-static routes
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
