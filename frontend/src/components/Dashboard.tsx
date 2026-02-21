@@ -104,6 +104,7 @@ export default function Dashboard({ result }: Props) {
                   overtrading={result.overtrading}
                   lossAversion={result.loss_aversion}
                   revengeTrading={result.revenge_trading}
+                  anchoring={result.anchoring}
                 />
               </div>
               <ArchetypeBadge archetype={result.archetype} />

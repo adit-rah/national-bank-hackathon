@@ -65,6 +65,7 @@ export interface AnalysisResult {
   overtrading: BiasScore;
   loss_aversion: BiasScore;
   revenge_trading: BiasScore;
+  anchoring: BiasScore;
   archetype: Archetype;
   feature_summary: FeatureSummary;
   equity_curve: EquityCurvePoint[];

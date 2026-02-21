@@ -5,6 +5,7 @@ interface Props {
   overtrading: BiasScore;
   lossAversion: BiasScore;
   revengeTrading: BiasScore;
+  anchoring: BiasScore;
 }
 
 function bandColor(band: string): string {
@@ -25,11 +26,12 @@ function bandLabel(band: string): string {
   }
 }
 
-export default function BiasRadar({ overtrading, lossAversion, revengeTrading }: Props) {
+export default function BiasRadar({ overtrading, lossAversion, revengeTrading, anchoring }: Props) {
   const biases = [
     { name: 'Overtrading', ...overtrading },
     { name: 'Loss Aversion', ...lossAversion },
     { name: 'Revenge Trading', ...revengeTrading },
+    { name: 'Anchoring', ...anchoring },
   ];
 
   const categories = biases.map((b) => b.name);
