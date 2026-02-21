@@ -40,10 +40,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    environment:
+      API_URL: http://backend:8000
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
       - ./frontend/index.html:/app/index.html
+      - ./frontend/server.js:/app/server.js
     depends_on:
       - backend
 
