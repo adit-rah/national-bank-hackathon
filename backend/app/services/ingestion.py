@@ -37,27 +37,51 @@ def _validate(df: pd.DataFrame) -> List[str]:
 
 def _validate_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Remove invalid rows and return (cleaned_df, validation_stats)."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     initial = len(df)
     stats = {
         "initial_rows": initial,
         "removed_missing": 0,
         "removed_invalid_side": 0,
         "removed_invalid_values": 0,
+        "invalid_rows": [],
     }
 
     # 1. Drop rows with critical NaN values
     before = len(df)
+    missing_mask = df[["timestamp", "asset", "side", "quantity", "balance"]].isnull().any(axis=1)
+    if missing_mask.sum() > 0:
+        invalid_rows = df[missing_mask].index.tolist()
+        stats["invalid_rows"].extend([
+            {"row": int(idx), "reason": "missing_critical_field", "data": str(df.loc[idx].to_dict())}
+            for idx in invalid_rows[:5]  # Log first 5
+        ])
+        logger.warning(f"Removing {missing_mask.sum()} rows with missing critical fields (rows: {invalid_rows[:10]})")
+
     df = df.dropna(subset=["timestamp", "asset", "side", "quantity", "balance"])
     stats["removed_missing"] = before - len(df)
 
     # 2. Validate and normalize side values
+    df = df.copy()  # Avoid SettingWithCopyWarning
     df["side"] = df["side"].str.upper().str.strip()
     before = len(df)
+    invalid_side_mask = ~df["side"].isin(["BUY", "SELL"])
+    if invalid_side_mask.sum() > 0:
+        invalid_rows = df[invalid_side_mask].index.tolist()
+        logger.warning(f"Removing {invalid_side_mask.sum()} rows with invalid side values (rows: {invalid_rows[:10]})")
+
     df = df[df["side"].isin(["BUY", "SELL"])]
     stats["removed_invalid_side"] = before - len(df)
 
     # 3. Remove impossible values
     before = len(df)
+    invalid_value_mask = (df["quantity"] <= 0) | (df["entry_price"] <= 0) | (df["exit_price"] <= 0)
+    if invalid_value_mask.sum() > 0:
+        invalid_rows = df[invalid_value_mask].index.tolist()
+        logger.warning(f"Removing {invalid_value_mask.sum()} rows with invalid values (quantity/price <= 0) (rows: {invalid_rows[:10]})")
+
     df = df[
         (df["quantity"] > 0) &
         (df["entry_price"] > 0) &
@@ -68,6 +92,13 @@ def _validate_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     stats["final_rows"] = len(df)
     stats["total_removed"] = initial - len(df)
     stats["removal_percentage"] = round((stats["total_removed"] / initial * 100), 2) if initial > 0 else 0
+
+    if stats["total_removed"] > 0:
+        logger.info(
+            f"Data validation summary: {initial} → {stats['final_rows']} rows "
+            f"({stats['total_removed']} removed: {stats['removed_missing']} missing, "
+            f"{stats['removed_invalid_side']} invalid side, {stats['removed_invalid_values']} invalid values)"
+        )
 
     return df, stats
 
