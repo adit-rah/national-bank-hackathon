@@ -9,9 +9,9 @@ interface Props {
 
 function bandColor(band: string): string {
   switch (band) {
-    case 'disciplined': return '#00d4aa';
+    case 'disciplined': return '#34d399';
     case 'elevated': return '#fbbf24';
-    case 'high_risk': return '#ff4757';
+    case 'high_risk': return '#f87171';
     default: return '#6b7280';
   }
 }
@@ -36,70 +36,77 @@ export default function BiasRadar({ overtrading, lossAversion, revengeTrading }:
   const values = biases.map((b) => b.score);
 
   return (
-    <div className="bg-dark-800 border border-dark-600 rounded-xl p-6">
-      <h3 className="text-white font-semibold mb-4">Bias Severity</h3>
+    <div className="card p-6 h-full">
+      <p className="section-title mb-6">Bias Severity</p>
 
-      <div className="flex flex-col lg:flex-row items-center gap-6">
-        <Plot
-          data={[
-            {
-              type: 'scatterpolar',
-              r: [...values, values[0]],
-              theta: [...categories, categories[0]],
-              fill: 'toself',
-              fillcolor: 'rgba(59, 130, 246, 0.15)',
-              line: { color: '#3b82f6', width: 2 },
-              marker: { size: 8, color: '#3b82f6' },
-            },
-          ]}
-          layout={{
-            autosize: true,
-            height: 320,
-            width: 380,
-            margin: { l: 60, r: 60, t: 30, b: 30 },
-            paper_bgcolor: 'transparent',
-            plot_bgcolor: 'transparent',
-            font: { color: '#9ca3af', size: 12 },
-            polar: {
-              bgcolor: 'transparent',
-              radialaxis: {
-                visible: true,
-                range: [0, 100],
-                gridcolor: '#1f2937',
-                linecolor: '#374151',
-                tickfont: { color: '#6b7280' },
+      <div className="flex flex-col lg:flex-row items-center gap-8">
+        <div className="flex-shrink-0">
+          <Plot
+            data={[
+              {
+                type: 'scatterpolar',
+                r: [...values, values[0]],
+                theta: [...categories, categories[0]],
+                fill: 'toself',
+                fillcolor: 'rgba(96, 165, 250, 0.08)',
+                line: { color: 'rgba(96, 165, 250, 0.6)', width: 2 },
+                marker: { size: 6, color: '#60a5fa' },
               },
-              angularaxis: {
-                gridcolor: '#1f2937',
-                linecolor: '#374151',
+            ]}
+            layout={{
+              autosize: false,
+              height: 280,
+              width: 340,
+              margin: { l: 55, r: 55, t: 25, b: 25 },
+              paper_bgcolor: 'transparent',
+              plot_bgcolor: 'transparent',
+              font: { color: '#6b7280', size: 11, family: 'Inter' },
+              polar: {
+                bgcolor: 'transparent',
+                radialaxis: {
+                  visible: true,
+                  range: [0, 100],
+                  gridcolor: 'rgba(255,255,255,0.04)',
+                  linecolor: 'rgba(255,255,255,0.04)',
+                  tickfont: { color: '#4b5563', size: 9 },
+                },
+                angularaxis: {
+                  gridcolor: 'rgba(255,255,255,0.04)',
+                  linecolor: 'rgba(255,255,255,0.06)',
+                },
               },
-            },
-            showlegend: false,
-          }}
-          config={{ responsive: true, displayModeBar: false }}
-        />
+              showlegend: false,
+            }}
+            config={{ responsive: false, displayModeBar: false, staticPlot: true }}
+          />
+        </div>
 
-        <div className="flex-1 space-y-4">
+        <div className="flex-1 w-full space-y-5">
           {biases.map((b) => (
-            <div key={b.name} className="flex items-center gap-4">
-              <div className="flex-1">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-sm text-gray-300">{b.name}</span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full`}
-                    style={{ backgroundColor: `${bandColor(b.band)}20`, color: bandColor(b.band) }}>
+            <div key={b.name}>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[13px] text-gray-300 font-medium">{b.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-gray-500">{b.score}</span>
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md"
+                    style={{
+                      backgroundColor: `${bandColor(b.band)}12`,
+                      color: bandColor(b.band),
+                    }}
+                  >
                     {bandLabel(b.band)}
                   </span>
                 </div>
-                <div className="h-2 bg-dark-600 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${b.score}%`,
-                      backgroundColor: bandColor(b.band),
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">{b.score}/100</p>
+              </div>
+              <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700 ease-out"
+                  style={{
+                    width: `${b.score}%`,
+                    background: `linear-gradient(90deg, ${bandColor(b.band)}80, ${bandColor(b.band)})`,
+                  }}
+                />
               </div>
             </div>
           ))}

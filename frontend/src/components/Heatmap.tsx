@@ -8,7 +8,6 @@ interface Props {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function Heatmap({ data }: Props) {
-  // Build 7×24 matrix
   const matrix: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
   for (let i = 0; i < data.days.length; i++) {
     const d = data.days[i];
@@ -19,8 +18,9 @@ export default function Heatmap({ data }: Props) {
   }
 
   return (
-    <div className="bg-dark-800 border border-dark-600 rounded-xl p-6">
-      <h3 className="text-white font-semibold mb-4">Trade Frequency Heatmap</h3>
+    <div className="card p-6">
+      <p className="section-title mb-1">Trade Frequency</p>
+      <p className="text-[12px] text-gray-600 mb-4">Activity by day of week and hour</p>
       <Plot
         data={[
           {
@@ -29,28 +29,36 @@ export default function Heatmap({ data }: Props) {
             y: DAY_LABELS,
             type: 'heatmap',
             colorscale: [
-              [0, '#111827'],
-              [0.25, '#1e3a5f'],
-              [0.5, '#2563eb'],
-              [0.75, '#60a5fa'],
-              [1, '#00d4aa'],
+              [0, 'rgba(11,17,32,1)'],
+              [0.2, 'rgba(30,58,95,0.8)'],
+              [0.5, 'rgba(96,165,250,0.5)'],
+              [0.8, 'rgba(96,165,250,0.8)'],
+              [1, 'rgba(52,211,153,0.9)'],
             ],
             hoverongaps: false,
-            colorbar: {
-              tickfont: { color: '#9ca3af' },
-              title: { text: 'Trades', font: { color: '#9ca3af' } },
-            },
+            showscale: false,
           },
         ]}
         layout={{
           autosize: true,
-          height: 300,
-          margin: { l: 50, r: 20, t: 10, b: 40 },
+          height: 260,
+          margin: { l: 40, r: 8, t: 8, b: 36 },
           paper_bgcolor: 'transparent',
           plot_bgcolor: 'transparent',
-          font: { color: '#9ca3af', size: 11 },
-          xaxis: { title: 'Hour of Day' },
-          yaxis: { autorange: 'reversed' as const },
+          font: { color: '#6b7280', size: 9, family: 'Inter' },
+          xaxis: {
+            tickfont: { size: 8 },
+            dtick: 3,
+          },
+          yaxis: {
+            autorange: 'reversed' as const,
+            tickfont: { size: 9 },
+          },
+          hoverlabel: {
+            bgcolor: '#1a2540',
+            bordercolor: 'rgba(255,255,255,0.1)',
+            font: { color: '#e5e7eb', size: 11, family: 'Inter' },
+          },
         }}
         config={{ responsive: true, displayModeBar: false }}
         className="w-full"

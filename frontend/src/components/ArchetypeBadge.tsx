@@ -4,54 +4,48 @@ interface Props {
   archetype: Archetype;
 }
 
-const ARCHETYPE_ICONS: Record<string, string> = {
-  'Systematic Disciplined': '🎯',
-  'Aggressive Opportunistic': '⚡',
-  'Emotionally Reactive': '🌊',
-  'Conservative Defensive': '🛡️',
-};
-
-const ARCHETYPE_COLORS: Record<string, string> = {
-  'Systematic Disciplined': 'from-accent-green/20 to-accent-blue/20',
-  'Aggressive Opportunistic': 'from-accent-yellow/20 to-accent-red/20',
-  'Emotionally Reactive': 'from-accent-red/20 to-accent-purple/20',
-  'Conservative Defensive': 'from-accent-blue/20 to-accent-green/20',
+const ARCHETYPE_CONFIG: Record<string, { icon: string; gradient: string; accent: string }> = {
+  'Systematic Disciplined': { icon: '🎯', gradient: 'from-accent-green/[0.08] to-transparent', accent: '#34d399' },
+  'Aggressive Opportunistic': { icon: '⚡', gradient: 'from-accent-yellow/[0.08] to-transparent', accent: '#fbbf24' },
+  'Emotionally Reactive': { icon: '🌊', gradient: 'from-accent-red/[0.08] to-transparent', accent: '#f87171' },
+  'Conservative Defensive': { icon: '🛡️', gradient: 'from-accent-blue/[0.08] to-transparent', accent: '#60a5fa' },
 };
 
 export default function ArchetypeBadge({ archetype }: Props) {
-  const icon = ARCHETYPE_ICONS[archetype.label] || '📊';
-  const gradient = ARCHETYPE_COLORS[archetype.label] || 'from-dark-600 to-dark-700';
+  const config = ARCHETYPE_CONFIG[archetype.label] || { icon: '📊', gradient: 'from-white/[0.04] to-transparent', accent: '#6b7280' };
   const details = archetype.details || {};
 
-  return (
-    <div className={`bg-gradient-to-br ${gradient} border border-dark-600 rounded-xl p-6 flex flex-col`}>
-      <div className="text-4xl mb-4">{icon}</div>
-      <h3 className="text-white font-bold text-lg mb-2">{archetype.label}</h3>
-      <p className="text-gray-400 text-sm flex-1">
-        {details.description || 'Archetype classification based on trading patterns.'}
-      </p>
+  const metrics = [
+    { label: 'Trade Frequency', value: details.trade_frequency, unit: '/hr' },
+    { label: 'Position Variability', value: details.position_size_variability, unit: '%' },
+    { label: 'DD Tolerance', value: details.drawdown_tolerance, unit: '%' },
+  ].filter(m => m.value != null);
 
-      {/* Feature details */}
-      <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
-        {details.trade_frequency != null && (
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-500">Trade Frequency</span>
-            <span className="text-gray-300">{details.trade_frequency.toFixed(1)}/hr</span>
-          </div>
-        )}
-        {details.position_size_variability != null && (
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-500">Position Variability</span>
-            <span className="text-gray-300">{details.position_size_variability.toFixed(1)}%</span>
-          </div>
-        )}
-        {details.drawdown_tolerance != null && (
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-500">Drawdown Tolerance</span>
-            <span className="text-gray-300">{details.drawdown_tolerance.toFixed(1)}%</span>
-          </div>
-        )}
+  return (
+    <div className={`card bg-gradient-to-br ${config.gradient} p-6 flex flex-col h-full`}>
+      <p className="section-title mb-4">Trader Archetype</p>
+
+      <div className="flex-1">
+        <div className="text-3xl mb-3">{config.icon}</div>
+        <h3 className="text-white font-semibold text-lg tracking-tight mb-2">{archetype.label}</h3>
+        <p className="text-gray-500 text-[13px] leading-relaxed">
+          {details.description || 'Classification based on trading patterns.'}
+        </p>
       </div>
+
+      {/* Metrics */}
+      {metrics.length > 0 && (
+        <div className="mt-6 pt-4 border-t border-white/[0.06] space-y-2.5">
+          {metrics.map((m) => (
+            <div key={m.label} className="flex justify-between items-center">
+              <span className="text-[12px] text-gray-600">{m.label}</span>
+              <span className="text-[12px] text-gray-300 font-mono">
+                {typeof m.value === 'number' ? m.value.toFixed(1) : m.value}{m.unit}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

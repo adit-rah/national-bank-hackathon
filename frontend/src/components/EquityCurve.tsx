@@ -11,8 +11,9 @@ export default function EquityCurve({ data }: Props) {
   const drawdowns = data.map((d) => d.drawdown);
 
   return (
-    <div className="bg-dark-800 border border-dark-600 rounded-xl p-6">
-      <h3 className="text-white font-semibold mb-4">Equity Curve & Drawdown</h3>
+    <div className="card p-6">
+      <p className="section-title mb-1">Equity Curve & Drawdown</p>
+      <p className="text-[12px] text-gray-600 mb-4">Balance over time with drawdown overlay</p>
       <Plot
         data={[
           {
@@ -21,7 +22,7 @@ export default function EquityCurve({ data }: Props) {
             type: 'scatter',
             mode: 'lines',
             name: 'Balance',
-            line: { color: '#3b82f6', width: 2 },
+            line: { color: '#60a5fa', width: 1.5, shape: 'spline' },
             yaxis: 'y1',
           },
           {
@@ -31,42 +32,50 @@ export default function EquityCurve({ data }: Props) {
             mode: 'lines',
             fill: 'tozeroy',
             name: 'Drawdown %',
-            line: { color: '#ff4757', width: 1 },
-            fillcolor: 'rgba(255,71,87,0.1)',
+            line: { color: '#f87171', width: 1 },
+            fillcolor: 'rgba(248,113,113,0.06)',
             yaxis: 'y2',
           },
         ]}
         layout={{
           autosize: true,
-          height: 400,
-          margin: { l: 60, r: 60, t: 10, b: 40 },
+          height: 360,
+          margin: { l: 55, r: 55, t: 8, b: 36 },
           paper_bgcolor: 'transparent',
           plot_bgcolor: 'transparent',
-          font: { color: '#9ca3af', size: 11 },
+          font: { color: '#6b7280', size: 10, family: 'Inter' },
           xaxis: {
-            gridcolor: '#1f2937',
-            linecolor: '#374151',
+            gridcolor: 'rgba(255,255,255,0.03)',
+            linecolor: 'rgba(255,255,255,0.06)',
+            tickfont: { size: 9 },
           },
           yaxis: {
-            title: 'Balance ($)',
-            gridcolor: '#1f2937',
-            linecolor: '#374151',
+            title: { text: 'Balance', font: { size: 10, color: '#4b5563' } },
+            gridcolor: 'rgba(255,255,255,0.03)',
+            linecolor: 'rgba(255,255,255,0.06)',
             side: 'left',
+            tickfont: { size: 9 },
+            tickprefix: '$',
           },
           yaxis2: {
-            title: 'Drawdown %',
+            title: { text: 'Drawdown', font: { size: 10, color: '#4b5563' } },
             overlaying: 'y',
             side: 'right',
             gridcolor: 'transparent',
-            linecolor: '#374151',
+            linecolor: 'rgba(255,255,255,0.06)',
+            tickfont: { size: 9 },
+            ticksuffix: '%',
           },
           legend: {
-            x: 0,
-            y: 1.12,
-            orientation: 'h',
-            font: { color: '#d1d5db' },
+            x: 0, y: 1.1, orientation: 'h',
+            font: { color: '#9ca3af', size: 10 },
           },
           hovermode: 'x unified',
+          hoverlabel: {
+            bgcolor: '#1a2540',
+            bordercolor: 'rgba(255,255,255,0.1)',
+            font: { color: '#e5e7eb', size: 11, family: 'Inter' },
+          },
         }}
         config={{ responsive: true, displayModeBar: false }}
         className="w-full"
