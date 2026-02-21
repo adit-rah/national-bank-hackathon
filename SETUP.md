@@ -9,7 +9,8 @@ You need two things installed on your machine:
    - Windows: https://docs.docker.com/desktop/install/windows-install/
    - Linux: https://docs.docker.com/desktop/install/linux-install/
 
-2. **An LLM API key** (at least one):
+2. **An LLM API key** (optional — app works fully without one):
+   - **Google Gemini (recommended, free tier):** https://aistudio.google.com/apikey
    - OpenAI: https://platform.openai.com/api-keys
    - Anthropic: https://console.anthropic.com/settings/keys
 
@@ -23,18 +24,22 @@ cp .env.example .env
 
 ### Step 2: Add your API key(s)
 
-Open `.env` and fill in at least one key:
+Open `.env` and fill in at least one key (or skip for template-based coaching):
 
 ```env
-# Choose your provider: "openai" or "anthropic"
-LLM_PROVIDER=openai
+# Choose your provider: "openai", "anthropic", or "gemini"
+LLM_PROVIDER=gemini
 
-# Fill in the key for your chosen provider
-OPENAI_API_KEY=sk-proj-your-actual-key-here
-ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
+# Google Gemini (free tier — recommended)
+GEMINI_API_KEY=your-gemini-key-here
+
+# Or OpenAI / Anthropic
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
 ```
 
 The database credentials are pre-configured and don't need to be changed.
+If you leave all API keys empty, the AI Coach will use a template-based fallback that still provides personalized, data-driven coaching.
 
 ### Step 3: Launch
 
@@ -128,9 +133,11 @@ docker compose logs backend
 
 ### "LLM call failed" on Coach tab
 
+- The system auto-falls back to template-based coaching if the LLM call fails
 - Check that your API key is valid in `.env`
 - Check that `LLM_PROVIDER` matches the key you provided
 - You can switch providers from the Coach tab dropdown
+- Google Gemini has the most generous free tier (15 requests/minute)
 
 ### "Missing required columns" on upload
 

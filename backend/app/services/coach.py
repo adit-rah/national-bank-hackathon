@@ -1,4 +1,4 @@
-"""AI Trading Coach – dual-provider (OpenAI + Anthropic) LLM integration."""
+"""AI Trading Coach – tri-provider (OpenAI + Anthropic + Gemini) LLM integration."""
 
 import json
 from typing import Optional
@@ -146,6 +146,34 @@ def _generate_fallback(analysis: dict) -> dict:
     }
 
 
+def _has_valid_key(key: str) -> bool:
+    """Check if an API key looks real (not a placeholder)."""
+    return bool(key) and len(key) >= 10 and "your" not in key.lower()
+
+
+def _pick_provider(preferred: str) -> str | None:
+    """Pick a provider with a valid key, preferring the requested one.
+
+    Returns the provider name or None if no valid key is found.
+    """
+    provider_keys = {
+        "openai": settings.OPENAI_API_KEY,
+        "anthropic": settings.ANTHROPIC_API_KEY,
+        "gemini": settings.GEMINI_API_KEY,
+    }
+
+    # Try preferred first
+    if _has_valid_key(provider_keys.get(preferred, "")):
+        return preferred
+
+    # Try others in order
+    for name, key in provider_keys.items():
+        if name != preferred and _has_valid_key(key):
+            return name
+
+    return None
+
+
 async def generate_coaching(
     analysis: dict,
     provider_override: Optional[str] = None,
@@ -155,23 +183,10 @@ async def generate_coaching(
     Falls back to template-based coaching if no API key is configured
     or the LLM call fails.
     """
-    provider = provider_override or settings.LLM_PROVIDER
+    preferred = provider_override or settings.LLM_PROVIDER
+    provider = _pick_provider(preferred)
 
-    # Check if API key is available
-    if provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
-        if settings.OPENAI_API_KEY:
-            provider = "openai"  # auto-switch
-        else:
-            return _generate_fallback(analysis)
-    elif provider == "openai" and not settings.OPENAI_API_KEY:
-        if settings.ANTHROPIC_API_KEY:
-            provider = "anthropic"  # auto-switch
-        else:
-            return _generate_fallback(analysis)
-
-    # Skip placeholder keys
-    key = settings.OPENAI_API_KEY if provider == "openai" else settings.ANTHROPIC_API_KEY
-    if "your" in key.lower() or len(key) < 10:
+    if provider is None:
         return _generate_fallback(analysis)
 
     user_prompt = _build_user_prompt(analysis)
@@ -179,6 +194,8 @@ async def generate_coaching(
     try:
         if provider == "anthropic":
             return await _call_anthropic(user_prompt)
+        elif provider == "gemini":
+            return await _call_gemini(user_prompt)
         else:
             return await _call_openai(user_prompt)
     except Exception:
@@ -231,6 +248,34 @@ async def _call_anthropic(user_prompt: str) -> dict:
     except json.JSONDecodeError:
         return {
             "provider": "anthropic",
+            "feedback": content,
+            "discipline_plan": [],
+            "daily_checklist": [],
+            "journaling_prompts": [],
+        }
+
+
+async def _call_gemini(user_prompt: str) -> dict:
+    """Call Google Gemini API."""
+    from google import genai
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    response = await client.aio.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=f"{SYSTEM_PROMPT}\n\n{user_prompt}",
+        config={
+            "response_mime_type": "application/json",
+            "temperature": 0.7,
+            "max_output_tokens": 2000,
+        },
+    )
+    content = response.text
+    try:
+        return {"provider": "gemini", **json.loads(content)}
+    except json.JSONDecodeError:
+        return {
+            "provider": "gemini",
             "feedback": content,
             "discipline_plan": [],
             "daily_checklist": [],

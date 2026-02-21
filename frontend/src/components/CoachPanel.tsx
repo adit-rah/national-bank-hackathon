@@ -43,6 +43,7 @@ export default function CoachPanel({ sessionId }: Props) {
             <option value="">Default Provider</option>
             <option value="openai">OpenAI (GPT-4o)</option>
             <option value="anthropic">Anthropic (Claude)</option>
+            <option value="gemini">Google Gemini (Free Tier)</option>
           </select>
 
           <button
@@ -73,7 +74,7 @@ export default function CoachPanel({ sessionId }: Props) {
             }`}>
               {result.provider === 'fallback'
                 ? 'Template-based (no API key configured)'
-                : `Powered by ${result.provider === 'openai' ? 'GPT-4o' : 'Claude'}`}
+                : `Powered by ${{ openai: 'GPT-4o', anthropic: 'Claude', gemini: 'Gemini 2.0 Flash' }[result.provider] || result.provider}`}
             </span>
           </div>
 
