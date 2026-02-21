@@ -35,8 +35,45 @@ def _validate(df: pd.DataFrame) -> List[str]:
     return [c for c in REQUIRED_COLUMNS if c not in df.columns]
 
 
-def parse_file(contents: bytes, filename: str) -> pd.DataFrame:
-    """Parse CSV or Excel bytes into a DataFrame."""
+def _validate_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Remove invalid rows and return (cleaned_df, validation_stats)."""
+    initial = len(df)
+    stats = {
+        "initial_rows": initial,
+        "removed_missing": 0,
+        "removed_invalid_side": 0,
+        "removed_invalid_values": 0,
+    }
+
+    # 1. Drop rows with critical NaN values
+    before = len(df)
+    df = df.dropna(subset=["timestamp", "asset", "side", "quantity", "balance"])
+    stats["removed_missing"] = before - len(df)
+
+    # 2. Validate and normalize side values
+    df["side"] = df["side"].str.upper().str.strip()
+    before = len(df)
+    df = df[df["side"].isin(["BUY", "SELL"])]
+    stats["removed_invalid_side"] = before - len(df)
+
+    # 3. Remove impossible values
+    before = len(df)
+    df = df[
+        (df["quantity"] > 0) &
+        (df["entry_price"] > 0) &
+        (df["exit_price"] > 0)
+    ]
+    stats["removed_invalid_values"] = before - len(df)
+
+    stats["final_rows"] = len(df)
+    stats["total_removed"] = initial - len(df)
+    stats["removal_percentage"] = round((stats["total_removed"] / initial * 100), 2) if initial > 0 else 0
+
+    return df, stats
+
+
+def parse_file(contents: bytes, filename: str) -> tuple[pd.DataFrame, dict]:
+    """Parse CSV or Excel bytes into a DataFrame. Returns (df, validation_stats)."""
     if filename.endswith((".xlsx", ".xls")):
         df = pd.read_excel(io.BytesIO(contents))
     else:
@@ -52,9 +89,15 @@ def parse_file(contents: bytes, filename: str) -> pd.DataFrame:
     for col in ["quantity", "entry_price", "exit_price", "profit_loss", "balance"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # Validate and clean rows
+    df, validation_stats = _validate_rows(df)
+
+    if len(df) == 0:
+        raise ValueError("No valid rows after validation - all rows had critical errors")
+
     df.sort_values("timestamp", inplace=True)
     df.reset_index(drop=True, inplace=True)
-    return df
+    return df, validation_stats
 
 
 async def ingest_dataframe(

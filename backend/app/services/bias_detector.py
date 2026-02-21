@@ -311,3 +311,59 @@ def detect_revenge_trading(df: pd.DataFrame) -> tuple[float, dict]:
         "position_variability": round(variability_score, 1),
     }
     return round(clamp(composite), 1), details
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Anchoring Bias
+# ──────────────────────────────────────────────────────────────────────────────
+
+def detect_anchoring(df: pd.DataFrame) -> tuple[float, dict]:
+    """Score 0-100 for anchoring bias.
+
+    Anchoring occurs when traders fixate on reference points (entry price,
+    recent high/low) and make irrational decisions based on these anchors.
+    """
+    details: dict = {}
+
+    if len(df) < 10:
+        return 0.0, {"reason": "insufficient_data"}
+
+    # 1. Exit price proximity to entry (reluctance to exit near entry = anchoring)
+    df_copy = df.copy()
+    df_copy["exit_entry_ratio"] = abs(df_copy["exit_price"] / df_copy["entry_price"] - 1)
+
+    # Count trades exited within 1% of entry price
+    anchored_exits = (df_copy["exit_entry_ratio"] < 0.01).sum()
+    anchor_rate = anchored_exits / len(df_copy) * 100
+    details["anchor_exit_rate_pct"] = round(float(anchor_rate), 2)
+
+    anchor_score = clamp(anchor_rate * 5, 0, 100)  # 20%+ anchored exits = high score
+
+    # 2. Profit/loss clustering around zero (reluctance to take small losses/gains)
+    pnl_median = abs(df["profit_loss"]).median()
+    if pnl_median > 0:
+        pnl_near_zero = (abs(df["profit_loss"]) < pnl_median * 0.1).sum()
+        zero_cluster_rate = pnl_near_zero / len(df) * 100
+        details["pnl_near_zero_pct"] = round(float(zero_cluster_rate), 2)
+        cluster_score = clamp(zero_cluster_rate * 3, 0, 100)
+    else:
+        details["pnl_near_zero_pct"] = 0.0
+        cluster_score = 0
+
+    # 3. Round number fixation (exits at prices ending in .00, .50, etc.)
+    if "exit_price" in df.columns:
+        exit_decimals = df["exit_price"].apply(lambda x: abs(x - round(x, 0)))
+        round_number_exits = (exit_decimals < 0.01).sum()
+        round_number_rate = round_number_exits / len(df) * 100
+        details["round_number_exit_rate_pct"] = round(float(round_number_rate), 2)
+        round_score = clamp(round_number_rate * 2, 0, 100)
+    else:
+        round_score = 0
+
+    composite = 0.40 * anchor_score + 0.35 * cluster_score + 0.25 * round_score
+    details["sub_scores"] = {
+        "anchor_exit": round(anchor_score, 1),
+        "zero_clustering": round(cluster_score, 1),
+        "round_number": round(round_score, 1),
+    }
+    return round(clamp(composite), 1), details

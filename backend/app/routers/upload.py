@@ -29,17 +29,21 @@ async def upload_file(
 
     contents = await file.read()
     try:
-        df = parse_file(contents, file.filename)
+        df, validation_stats = parse_file(contents, file.filename)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
     session = await ingest_dataframe(db, df, filename=file.filename)
     await db.commit()
 
+    message = f"Successfully uploaded {session.trade_count} trades"
+    if validation_stats["total_removed"] > 0:
+        message += f" ({validation_stats['total_removed']} invalid rows removed - {validation_stats['removal_percentage']}%)"
+
     return UploadResponse(
         session_id=str(session.id),
         trade_count=session.trade_count,
-        message=f"Successfully uploaded {session.trade_count} trades",
+        message=message,
     )
 
 
