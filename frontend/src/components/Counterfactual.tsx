@@ -10,6 +10,8 @@ const CONSTRAINTS = [
   { key: 'stopLoss', label: 'Stop-Loss', desc: 'Max loss per trade', min: 0.5, max: 10, step: 0.5, unit: '%', def: 2 },
   { key: 'daily', label: 'Daily Trade Limit', desc: 'Max trades per day', min: 1, max: 50, step: 1, unit: '', def: 20 },
   { key: 'cooldown', label: 'Cooldown Period', desc: 'Min time between trades', min: 1, max: 60, step: 1, unit: 'min', def: 5 },
+  { key: 'lossStreak', label: 'Loss-Streak Breaker', desc: 'Stop after N consecutive losses', min: 2, max: 10, step: 1, unit: '', def: 3 },
+  { key: 'drawdownBreaker', label: 'Drawdown Breaker', desc: 'Pause when drawdown exceeds X%', min: 1, max: 20, step: 0.5, unit: '%', def: 5 },
 ] as const;
 
 const METRIC_NAMES: Record<string, string> = {
@@ -31,8 +33,8 @@ function fmtMetric(key: string, value: number): string {
 }
 
 export default function Counterfactual({ sessionId }: Props) {
-  const [vals, setVals] = useState<Record<string, number>>({ position: 5, stopLoss: 2, daily: 20, cooldown: 5 });
-  const [on, setOn] = useState<Record<string, boolean>>({ position: false, stopLoss: false, daily: false, cooldown: false });
+  const [vals, setVals] = useState<Record<string, number>>({ position: 5, stopLoss: 2, daily: 20, cooldown: 5, lossStreak: 3, drawdownBreaker: 5 });
+  const [on, setOn] = useState<Record<string, boolean>>({ position: false, stopLoss: false, daily: false, cooldown: false, lossStreak: false, drawdownBreaker: false });
   const [result, setResult] = useState<CounterfactualResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -48,6 +50,8 @@ export default function Counterfactual({ sessionId }: Props) {
         stop_loss_pct: on.stopLoss ? vals.stopLoss : null,
         max_daily_trades: on.daily ? vals.daily : null,
         cooldown_minutes: on.cooldown ? vals.cooldown : null,
+        max_loss_streak: on.lossStreak ? vals.lossStreak : null,
+        max_drawdown_trigger_pct: on.drawdownBreaker ? vals.drawdownBreaker : null,
       });
       setResult(res);
     } catch (e: any) { setError(e?.response?.data?.detail || 'Simulation failed'); }
@@ -148,6 +152,40 @@ export default function Counterfactual({ sessionId }: Props) {
               );
             })}
           </div>
+
+          {/* Excluded trades breakdown */}
+          {Object.keys(result.excluded_breakdown).length > 0 && (() => {
+            const BREAKDOWN_LABELS: Record<string, string> = {
+              daily_limit: 'Daily Limit', cooldown: 'Cooldown', loss_streak: 'Loss Streak',
+              drawdown_breaker: 'Drawdown Breaker', position_cap_scaled: 'Position Scaled', stop_loss_capped: 'Stop-Loss Capped',
+            };
+            const entries = Object.entries(result.excluded_breakdown).sort((a, b) => b[1] - a[1]);
+            const labels = entries.map(([k]) => BREAKDOWN_LABELS[k] || k.replace(/_/g, ' '));
+            const values = entries.map(([, v]) => v);
+            return (
+              <div className="card p-5">
+                <p className="data-label mb-4">Constraint Impact Breakdown</p>
+                <Plot
+                  data={[{
+                    type: 'bar', orientation: 'h', x: values, y: labels,
+                    marker: { color: 'rgba(59,130,246,0.5)', line: { color: 'rgba(59,130,246,0.8)', width: 1 } },
+                    hovertemplate: '%{y}: %{x} trades<extra></extra>',
+                  }]}
+                  layout={{
+                    autosize: true, height: Math.max(120, entries.length * 36 + 40),
+                    margin: { l: 120, r: 20, t: 4, b: 24 },
+                    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                    font: { color: '#5a6174', size: 10, family: 'Inter' },
+                    xaxis: { gridcolor: 'rgba(255,255,255,0.03)', tickfont: { size: 9 }, title: { text: 'Trades affected', font: { size: 9, color: '#3a4258' } } },
+                    yaxis: { tickfont: { size: 10 }, autorange: 'reversed' },
+                    bargap: 0.3,
+                  }}
+                  config={{ responsive: true, displayModeBar: false }}
+                  className="w-full"
+                />
+              </div>
+            );
+          })()}
 
           {/* Equity comparison */}
           <div className="card p-5">

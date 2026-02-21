@@ -53,10 +53,12 @@ class AnalysisResponse(BaseModel):
 
 # ─── Counterfactual ───
 class CounterfactualRequest(BaseModel):
-    max_position_pct: Optional[float] = None  # e.g. 5.0 means 5%
-    stop_loss_pct: Optional[float] = None      # e.g. 2.0 means 2%
+    max_position_pct: Optional[float] = None
+    stop_loss_pct: Optional[float] = None
     max_daily_trades: Optional[int] = None
     cooldown_minutes: Optional[float] = None
+    max_loss_streak: Optional[int] = None
+    max_drawdown_trigger_pct: Optional[float] = None
 
 
 class CounterfactualResponse(BaseModel):
@@ -70,6 +72,7 @@ class CounterfactualResponse(BaseModel):
     equity_curve_simulated: List[dict]
     trades_original: int
     trades_simulated: int
+    excluded_breakdown: dict
 
 
 # ─── Coach ───

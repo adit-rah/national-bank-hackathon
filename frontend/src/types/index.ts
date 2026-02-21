@@ -94,6 +94,8 @@ export interface CounterfactualParams {
   stop_loss_pct?: number | null;
   max_daily_trades?: number | null;
   cooldown_minutes?: number | null;
+  max_loss_streak?: number | null;
+  max_drawdown_trigger_pct?: number | null;
 }
 
 export interface CounterfactualResult {
@@ -107,6 +109,7 @@ export interface CounterfactualResult {
   equity_curve_simulated: { timestamp: string; balance: number }[];
   trades_original: number;
   trades_simulated: number;
+  excluded_breakdown: Record<string, number>;
 }
 
 export interface CoachResult {

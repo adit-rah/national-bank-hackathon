@@ -8,12 +8,10 @@ export default function CoachPanel({ sessionId }: Props) {
   const [result, setResult] = useState<CoachResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [provider, setProvider] = useState('');
-
   const generate = async () => {
     setLoading(true); setError('');
     try {
-      setResult(await getCoaching(sessionId, provider || undefined));
+      setResult(await getCoaching(sessionId, 'groq'));
     } catch (e: any) { setError(e?.response?.data?.detail || 'Failed to generate coaching'); }
     finally { setLoading(false); }
   };
@@ -27,29 +25,16 @@ export default function CoachPanel({ sessionId }: Props) {
           Generate personalized coaching grounded in your actual metrics — not generic advice.
         </p>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <select
-            value={provider}
-            onChange={e => setProvider(e.target.value)}
-            className="bg-white/[0.02] border border-white/[0.05] text-[#8a90a0] rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:border-blue-500/30 transition-colors appearance-none cursor-pointer"
-          >
-            <option value="">Default Provider</option>
-            <option value="openai">OpenAI (GPT-4o)</option>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="gemini">Google Gemini</option>
-          </select>
-
-          <button onClick={generate} disabled={loading} className="btn-primary"
-            style={!loading ? { background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)' } : {}}
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                Generating…
-              </span>
-            ) : result ? 'Regenerate' : 'Generate Coaching'}
-          </button>
-        </div>
+        <button onClick={generate} disabled={loading} className="btn-primary"
+          style={!loading ? { background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)' } : {}}
+        >
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              Generating…
+            </span>
+          ) : result ? 'Regenerate' : 'Generate Coaching'}
+        </button>
         {error && <p className="mt-2.5 text-[11px] text-red-400">{error}</p>}
       </div>
 
@@ -65,7 +50,7 @@ export default function CoachPanel({ sessionId }: Props) {
             }`}>
               {result.provider === 'fallback'
                 ? 'Template-based (no API key)'
-                : `${{ openai: 'GPT-4o', anthropic: 'Claude', gemini: 'Gemini 2.0' }[result.provider] || result.provider}`}
+                : 'Llama 3.3 70B (Groq)'}
             </span>
           </div>
 

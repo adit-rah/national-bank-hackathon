@@ -86,7 +86,7 @@ export default function Upload({ onAnalysisComplete }: Props) {
                 <p className="text-[14px] text-white font-medium mb-1">
                   {isDragActive ? 'Release to upload' : 'Drop file or click to browse'}
                 </p>
-                <p className="text-[12px] text-[#3a4258] mb-5">CSV or Excel • up to 200k trades</p>
+                <p className="text-[12px] text-[#3a4258] mb-5">CSV or Excel</p>
                 <div className="flex gap-1.5">
                   {['.CSV', '.XLSX'].map(ext => (
                     <span key={ext} className="badge bg-white/[0.03] text-[#4a5068] border border-white/[0.04]">{ext}</span>
